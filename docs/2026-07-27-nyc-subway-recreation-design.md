@@ -239,3 +239,40 @@ Pixlet apps are stateless per render, so there is no cache to fall back on.
   bikes**, the bottom is **e-bikes** — `num_bikes_available=21` / `num_ebikes_available=20` matched
   the screenshot's `21` / `⚡20` exactly. Its own spec when Subway is done.
 - **Station picker schema**, enabled by the configuration seam above.
+
+## Future work: route-bullet coverage for the station picker
+
+Raised 2026-07-28 while considering the station-picker schema: does the app need a
+stored bitmap per subway line?
+
+**No.** The bullet renders generically as `render.Circle` + `render.Text(route_id,
+font = FONT_DEST)`, with the colour supplied by `api.subwaynow.app/routes/`. This was
+proven live: an **F** train appeared at G35 (normally G-only, a reroute) and rendered
+correctly with no code change. Storing bitmaps would be strictly worse — they cannot
+follow API colour changes, need re-cutting per route, and reintroduce the
+embedded-reference-pixel pattern deleted as a defect in Task 3.
+
+**But there is a real gap.** Of the 29 route ids the API returns, six are
+multi-character and will NOT fit an 11px bullet:
+
+```
+1 2 3 4 5 6 6X 7 7X A B C D E F FS FX G GS H J L M N Q R SI W Z
+                ^^    ^^          ^^ ^^    ^^          ^^
+```
+
+The other 23 are single characters and already render correctly today. G35
+(Clinton - Washington Avs) only ever sees `G` and occasionally `F`, so this does not
+affect the current hardcoded station — it becomes live the moment a station picker
+lets the user choose a station served by express or shuttle services.
+
+What is needed is a **presentation mapping**, not assets:
+
+| Route id | MTA presentation |
+|---|---|
+| `6X`, `7X`, `FX` | **Diamond** bullet showing only `6` / `7` / `F` (express service) |
+| `FS`, `GS` | Circle showing `S` (Franklin Ave / Grand St shuttles) |
+| `SI` | Staten Island Railway — separate branding, not a circle bullet |
+
+The diamond is the only new drawing primitive required; everything else is a lookup
+that collapses the id to its display character. Keep it data-driven so a future route
+id does not need new art.
