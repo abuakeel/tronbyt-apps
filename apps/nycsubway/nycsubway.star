@@ -1,4 +1,6 @@
 load("render.star", "render")
+load("http.star", "http")
+load("time.star", "time")
 
 # --- fonts: measured against the reference in tools/fontprobe.py (Task 2) ---
 # Dina_r400-6: 21.8% glyph mismatch on destination text, and (Task 3 review,
@@ -79,6 +81,85 @@ def render_row(route_id, route_color, destination, arrival_text):
         ],
     )
 
+STOPS_URL = "https://api.subwaynow.app/stops/"
+ROUTES_URL = "https://api.subwaynow.app/routes/"
+
+# --- configuration seam -----------------------------------------------------
+# Hardcoded today. To add a station picker later, implement get_schema() and
+# these config.str() calls start returning user values -- NO other code changes.
+# Nothing outside get_settings() may reference this constant by name.
+DEFAULT_STOP_ID = "G35"  # Clinton - Washington Avs
+DEFAULT_DIRECTIONS = ["north", "south"]
+
+def get_settings(config):
+    return {
+        "stop_id": config.str("stop_id", DEFAULT_STOP_ID),
+        "directions": DEFAULT_DIRECTIONS,
+    }
+
+def fetch_json(url, ttl):
+    resp = http.get(url, ttl_seconds = ttl)
+    if resp.status_code != 200:
+        return None
+    return resp.json()
+
+def route_colors():
+    data = fetch_json(ROUTES_URL, 86400)
+    colors = {}
+    if data == None:
+        return colors
+
+    # The live API keys "routes" by route id (a dict), not a list.
+    routes = data.get("routes", {})
+    for r in routes.values():
+        if r.get("color"):
+            colors[r["id"]] = r["color"]
+    return colors
+
+def stop_names():
+    data = fetch_json(STOPS_URL, 86400)
+    names = {}
+    if data == None:
+        return names
+    for s in data.get("stops", []):
+        names[s["id"]] = s["name"]
+    return names
+
+def format_arrival(seconds_away):
+    if seconds_away < 60:
+        return "now"
+    return str(int(seconds_away // 60)) + " min"
+
+def fetch_trips(settings):
+    """Returns exactly len(directions) dicts, padded with placeholders on failure."""
+    colors = route_colors()
+    names = stop_names()
+    data = fetch_json(STOPS_URL + settings["stop_id"] + "?agent=tidbyt", 60)
+    now = time.now().unix
+    out = []
+    for direction in settings["directions"]:
+        trip = None
+        if data != None:
+            upcoming = data.get("upcoming_trips", {}).get(direction, [])
+            if len(upcoming) > 0:
+                trip = upcoming[0]
+        if trip == None:
+            out.append({
+                "route_id": "",
+                "color": "#000000",
+                "destination": "no trains",
+                "arrival": "",
+            })
+        else:
+            dest_id = trip.get("destination_stop", "")
+            out.append({
+                "route_id": trip["route_id"],
+                "color": colors.get(trip["route_id"], "#888888"),
+                "destination": names.get(dest_id, dest_id),
+                "arrival": format_arrival(trip["estimated_current_stop_arrival_time"] - now),
+            })
+    return out
+
 def render_app(trips):
     """trips: a list of train dicts (route_id, color, destination, arrival).
 
@@ -94,12 +175,4 @@ def render_app(trips):
     return render.Root(delay = 100, child = render.Column(children = rows))
 
 def main(config):
-    # Destinations match what's actually visible in the reference frame
-    # (verified by eye against a brightness-normalised 10x crop) -- not the
-    # brief's original "Court Sq" / "Church Av" placeholder guess, which
-    # doesn't match this capture. Not graded (destination text isn't a
-    # STATIC_REGION) but keeps the whole-frame INFO count meaningful.
-    return render_app([
-        {"route_id": "G", "color": "#6cbe45", "destination": "Church Av", "arrival": "now"},
-        {"route_id": "G", "color": "#6cbe45", "destination": "Queens", "arrival": "now"},
-    ])
+    return render_app(fetch_trips(get_settings(config)))
