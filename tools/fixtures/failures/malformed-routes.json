@@ -1,0 +1,18 @@
+{
+    "_comment": "Overrides the /routes/ body only. One entry is missing 'id', the other is missing 'color' -- the old code direct-indexed colors[r['id']] = r['color'] and would KeyError on either (IMPORTANT 3). The fixed route_colors() must skip both and return an empty/partial dict instead of crashing; fetch_trips then falls back to the #888888 default bullet color for route 'G'.",
+    "routes": {
+        "routes": {
+            "G": {"color": "#6cbe45"},
+            "F": {"id": "F"}
+        }
+    },
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "FIX_N", "arrival_offset": 30}
+            ],
+            "south": []
+        }
+    }
+}

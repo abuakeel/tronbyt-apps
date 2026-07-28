@@ -1,0 +1,18 @@
+{
+    "_comment": "Overrides the /stops/ body only. One entry is missing 'id', the other is missing 'name' -- the old code direct-indexed names[s['id']] = s['name'] and would KeyError on either (IMPORTANT 3). The fixed stop_names() must skip both and return an empty/partial dict instead of crashing; fetch_trips then falls back to the raw destination_stop id as the display text.",
+    "stops": {
+        "stops": [
+            {"name": "Church Av"},
+            {"id": "G21"}
+        ]
+    },
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "FIX_N", "arrival_offset": 30}
+            ],
+            "south": []
+        }
+    }
+}

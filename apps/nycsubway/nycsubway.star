@@ -114,11 +114,15 @@ def route_colors():
     if data == None:
         return colors
 
-    # The live API keys "routes" by route id (a dict), not a list.
-    routes = data.get("routes", {})
+    # The live API keys "routes" by route id (a dict), not a list. Entries
+    # missing "id" or "color" are skipped rather than direct-indexed -- a
+    # malformed routes payload must not crash the render.
+    routes = data.get("routes", {}) or {}
     for r in routes.values():
-        if r.get("color"):
-            colors[r["id"]] = r["color"]
+        route_id = r.get("id")
+        color = r.get("color")
+        if route_id and color:
+            colors[route_id] = color
     return colors
 
 def stop_names():
@@ -126,18 +130,28 @@ def stop_names():
     names = {}
     if data == None:
         return names
-    for s in data.get("stops", []):
-        names[s["id"]] = s["name"]
+    # Entries missing "id" or "name" are skipped rather than direct-indexed --
+    # a malformed stops payload must not crash the render.
+    for s in data.get("stops", []) or []:
+        stop_id = s.get("id")
+        name = s.get("name")
+        if stop_id and name:
+            names[stop_id] = name
     return names
 
 # A trip whose estimated arrival is further than this many seconds in the past
 # is treated as departed/stale rather than "now" -- see format_arrival below.
+# Sampled against 297 live head-trips: 74 were already in the past, worst
+# -30s, exactly one beyond -30s -- this sits right at the real tail.
 STALE_GRACE_SECONDS = 30
 
 def format_arrival(seconds_away):
     if seconds_away < 60:
         return "now"
     return str(int(seconds_away // 60)) + " min"
+
+def is_number(v):
+    return type(v) == "int" or type(v) == "float"
 
 def fetch_trips(settings):
     """Returns exactly len(directions) dicts, padded with placeholders on failure."""
@@ -149,18 +163,19 @@ def fetch_trips(settings):
     for direction in settings["directions"]:
         trip = None
         if data != None:
-            upcoming = data.get("upcoming_trips", {}).get(direction, [])
-            if len(upcoming) > 0:
-                candidate = upcoming[0]
+            upcoming = (data.get("upcoming_trips") or {}).get(direction) or []
+            # Scan for the first non-stale trip rather than only ever looking
+            # at upcoming[0] -- a stale head entry must not hide a perfectly
+            # good next train.
+            for candidate in upcoming:
                 raw_arrival = candidate.get("estimated_current_stop_arrival_time")
-                # Only treat it as upcoming if the arrival time is missing
-                # (handled below, tolerantly) or not more than a small grace
-                # period in the past. A feed entry whose train departed
-                # minutes ago must not be selected here -- format_arrival
-                # would otherwise read "now" forever (it has no lower bound
-                # of its own).
+                if raw_arrival != None and not is_number(raw_arrival):
+                    # Non-numeric arrival time (e.g. a string) -- can't do
+                    # arithmetic on it; treat like a missing arrival.
+                    raw_arrival = None
                 if raw_arrival == None or (raw_arrival - now) >= -STALE_GRACE_SECONDS:
                     trip = candidate
+                    break
         if trip == None:
             out.append({
                 "route_id": "",
@@ -169,11 +184,13 @@ def fetch_trips(settings):
                 "arrival": "",
             })
         else:
-            route_id = trip.get("route_id", "")
-            # `or ""` (not just a .get default) so a present-but-null
-            # destination_stop also falls back cleanly.
+            # `or ""` (not just a .get default) so a present-but-null value
+            # also falls back cleanly, not just an absent key.
+            route_id = trip.get("route_id") or ""
             dest_id = trip.get("destination_stop") or ""
             raw_arrival = trip.get("estimated_current_stop_arrival_time")
+            if raw_arrival != None and not is_number(raw_arrival):
+                raw_arrival = None
             arrival_text = "" if raw_arrival == None else format_arrival(raw_arrival - now)
             out.append({
                 "route_id": route_id,

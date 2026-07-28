@@ -1,0 +1,7 @@
+{
+    "_comment": "The whole 'upcoming_trips' key is null (not just an empty dict). fetch_trips must guard with (data.get('upcoming_trips') or {}) rather than assuming a dict default is enough -- data.get('upcoming_trips', {}) only helps when the key is ABSENT, not when it's present-and-null (MINOR 4).",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": null
+    }
+}

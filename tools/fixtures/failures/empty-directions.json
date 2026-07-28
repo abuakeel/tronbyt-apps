@@ -1,0 +1,10 @@
+{
+    "_comment": "Both directions have zero upcoming trips. Both rows must render 'no trains' with a dim bullet.",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [],
+            "south": []
+        }
+    }
+}

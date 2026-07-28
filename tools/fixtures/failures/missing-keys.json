@@ -1,0 +1,12 @@
+{
+    "_comment": "North's only trip is missing route_id, destination_stop, AND estimated_current_stop_arrival_time entirely (not null -- just absent). fetch_trips must use .get() defaults for all three rather than direct-indexing (Finding A).",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"id": "malformed-1", "direction": "north"}
+            ],
+            "south": []
+        }
+    }
+}

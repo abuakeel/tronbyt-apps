@@ -1,0 +1,4 @@
+{
+    "_comment": "Every endpoint (routes, stops, stop) answers 503. fetch_json's status_code != 200 check must turn this into None everywhere, and fetch_trips must fall back to 'no trains' for both directions -- not crash.",
+    "http_status": 503
+}

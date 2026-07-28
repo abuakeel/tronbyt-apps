@@ -1,0 +1,12 @@
+{
+    "_comment": "estimated_current_stop_arrival_time is present but explicitly null. No 'arrival_offset' key here on purpose -- gate.py only resolves arrival_offset when present, so this null passes through to fetch_trips verbatim, exercising the raw_arrival == None branch.",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "FIX_N", "estimated_current_stop_arrival_time": null}
+            ],
+            "south": []
+        }
+    }
+}

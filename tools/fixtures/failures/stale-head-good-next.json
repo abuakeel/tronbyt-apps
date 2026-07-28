@@ -1,0 +1,36 @@
+{
+    "_comment": [
+        "North has two trips: the head is stale (arrival_offset -300, departed 5 min",
+        "ago) and the second is a perfectly good upcoming trip (+300s -> '5 min').",
+        "IMPORTANT 2 (Task 5 review): fetch_trips used to only ever look at",
+        "upcoming[0], so a stale head trip would hide a perfectly good next train",
+        "and render 'no trains' instead of '5 min'. The fix scans the list for the",
+        "first non-stale candidate.",
+        "",
+        "'assert_matches_stop' is gate.py's own convention (not part of the app):",
+        "when present, gate.py additionally renders THIS alternate stop payload",
+        "(north has only the good second trip, nothing else) and requires the two",
+        "renders to be pixel-identical -- proving the app actually selected and",
+        "used the second trip's data, not just that it avoided crashing or",
+        "happened to fall back to a 'no trains' placeholder that looks passable."
+    ],
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "FIX_N", "arrival_offset": -300},
+                {"route_id": "G", "destination_stop": "G21", "arrival_offset": 330}
+            ],
+            "south": []
+        }
+    },
+    "assert_matches_stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "G21", "arrival_offset": 330}
+            ],
+            "south": []
+        }
+    }
+}

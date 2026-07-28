@@ -1,0 +1,10 @@
+{
+    "_comment": "upcoming_trips exists but the north direction's value is null (not an empty list) -- a plausible real-world shape if the feed has literally nothing to say about that direction. south is a normal empty list for contrast. Both must render 'no trains', not crash on len(None).",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": null,
+            "south": []
+        }
+    }
+}

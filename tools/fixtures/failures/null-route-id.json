@@ -1,0 +1,12 @@
+{
+    "_comment": "route_id is present but explicitly null (IMPORTANT 1 from the Task 5 review: trip.get('route_id', '') does NOT catch this -- only trip.get('route_id') or '' does). Must not crash render.Text(None).",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": null, "destination_stop": "FIX_N", "arrival_offset": 30}
+            ],
+            "south": []
+        }
+    }
+}

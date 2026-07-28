@@ -1,0 +1,49 @@
+{
+    "_comment": [
+        "Mock bodies for the three real endpoints (/routes/, /stops/, /stops/<id>),",
+        "served by tools/gate.py's local HTTP server via URL substitution -- see",
+        "gate.py's module docstring for why this is done by injection rather than",
+        "a fixture-mode branch inside nycsubway.star itself.",
+        "",
+        "Verified (Task 5 review) to render at 0/2048 whole-frame diff against",
+        "reference/subway-64x32.png: north 'Church Av', south 'Queens', both 'now'.",
+        "",
+        "'estimated_current_stop_arrival_time' is written here as a relative",
+        "'arrival_offset' (seconds from serve-time) rather than an absolute unix",
+        "time, since a fixture with a baked-in past timestamp would immediately",
+        "read as stale. gate.py resolves it to int(time.time()) + offset when the",
+        "mock server answers a /stops/<id> request. 30s ('now' bucket) and",
+        "N*60+30 (an 'N min' bucket) are used everywhere so render latency can",
+        "never flip which minute bucket format_arrival() lands in.",
+        "",
+        "destination_stop 'G21' deliberately does NOT use the live API's own name",
+        "for that stop ('Queens Plaza') -- the reference frame shows 'QUEENS', so",
+        "this fixture's stops list overrides it to 'Queens'. That only affects",
+        "which marquee text renders; it never touches the render path itself."
+    ],
+
+    "routes": {
+        "routes": {
+            "G": {"id": "G", "color": "#6cbe45"}
+        }
+    },
+
+    "stops": {
+        "stops": [
+            {"id": "FIX_N", "name": "Church Av"},
+            {"id": "G21", "name": "Queens"}
+        ]
+    },
+
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "FIX_N", "arrival_offset": 30}
+            ],
+            "south": [
+                {"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}
+            ]
+        }
+    }
+}

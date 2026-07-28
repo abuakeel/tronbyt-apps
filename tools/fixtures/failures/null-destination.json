@@ -1,0 +1,12 @@
+{
+    "_comment": "destination_stop is present but explicitly null. Must fall back to '' cleanly, not crash on .upper() or a dict lookup.",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": null, "arrival_offset": 30}
+            ],
+            "south": []
+        }
+    }
+}

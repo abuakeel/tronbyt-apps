@@ -1,0 +1,12 @@
+{
+    "_comment": "North's only trip departed 5 minutes ago (arrival_offset -300, well beyond STALE_GRACE_SECONDS=30). With no other candidate, the direction must fall back to 'no trains' rather than reading 'now' forever (Finding B / MINOR from Task 5 review).",
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "FIX_N", "arrival_offset": -300}
+            ],
+            "south": []
+        }
+    }
+}
