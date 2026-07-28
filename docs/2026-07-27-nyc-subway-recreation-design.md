@@ -207,10 +207,28 @@ Pixlet apps are stateless per render, so there is no cache to fall back on.
 
 ## Open items
 
-- **Exact font identification.** `now` is 4px tall, matching `tom-thumb`; the destination is ~6px,
-  candidates `5x8` / `tb-8` / `6x10` / `Dina_r400-6`. To be settled by rendering each and diffing
-  against the extracted glyph bitmaps. If Tidbyt used a custom font, the closest built-in will be
-  used and the residual documented — the one aspect that cannot be guaranteed pixel-identical.
+- ~~**Exact font identification.**~~ **Resolved** by `tools/fontprobe.py` (Task 2). Height-filter
+  first (destination is 6px tall, arrival is 4px), then compare glyph bitmaps against the
+  reference at the best-fit horizontal alignment (the naive "x=16, no offset" assumption undercounts
+  real matches by 1-4px of font-internal left-bearing):
+
+  | Line | Chosen font | Match quality | Runner-up |
+  |---|---|---|---|
+  | Destination (`FONT_DEST`) | **`Dina_r400-6`** | 72/318 px mismatch (23%) at best alignment, vs 103/264 (39%) for `5x8` and 102/258 (40%) for `tb-8` — a clear, decisive win | `5x8` (39% mismatch) |
+  | Arrival (`FONT_TIME`) | **`tom-thumb`** | 13/44 px mismatch (30%) at best alignment | `5x8` / `tb-8` (tied, 32% mismatch — both render "now" identically) |
+
+  **Honest caveat on match quality:** neither is a clean pixel match. `Dina_r400-6` is a
+  reasonably strong candidate (77% agreement, and the mismatched pixels are concentrated at the
+  leading edge — consistent with the known mid-scroll clipping, not a wrong font). `tom-thumb` is
+  a weak win: only a 2-point margin over `5x8`/`tb-8` on a 44-pixel sample, and ~30% residual
+  mismatch either way. This could mean Tidbyt used a custom font for the arrival line, or that the
+  4px scale is simply too small for reliable discrimination against a photographically blurred
+  reference (max channel ≈ 57, box-downsampled from a photo — see
+  [The reference frame was recovered exactly](#the-reference-frame-was-recovered-exactly)).
+  `tom-thumb` is the best available evidence, not a confident identification.
+
+  Full methodology and probe output: `tools/fontprobe.py` plus the shift-corrected, full-width
+  comparison in the Task 2 report (`kubedeploy/.superpowers/sdd/2026-07-27-nyc-subway-recreation/task-2-report.md`).
 
 ## Future work
 
