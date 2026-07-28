@@ -214,21 +214,23 @@ Pixlet apps are stateless per render, so there is no cache to fall back on.
 
   | Line | Chosen font | Match quality | Runner-up |
   |---|---|---|---|
-  | Destination (`FONT_DEST`) | **`Dina_r400-6`** | 72/318 px mismatch (23%) at best alignment, vs 103/264 (39%) for `5x8` and 102/258 (40%) for `tb-8` — a clear, decisive win | `5x8` (39% mismatch) |
-  | Arrival (`FONT_TIME`) | **`tom-thumb`** | 13/44 px mismatch (30%) at best alignment | `5x8` / `tb-8` (tied, 32% mismatch — both render "now" identically) |
+  | Destination (`FONT_DEST`) | **`Dina_r400-6`** | 64/294 px mismatch (21.8%) at best alignment, vs 103/264 (39.0%) for `5x8` and 102/258 (39.5%) for `tb-8` — a clear, decisive win | `5x8` (39.0% mismatch) |
+  | Arrival (`FONT_TIME`) | **`tom-thumb`** | 13/44 px mismatch (29.5%) at best alignment | `5x8` / `tb-8` (tied, 31.7% mismatch — both render "now" identically) |
 
   **Honest caveat on match quality:** neither is a clean pixel match. `Dina_r400-6` is a
-  reasonably strong candidate (77% agreement, and the mismatched pixels are concentrated at the
+  reasonably strong candidate (~78% agreement, and the mismatched pixels are concentrated at the
   leading edge — consistent with the known mid-scroll clipping, not a wrong font). `tom-thumb` is
-  a weak win: only a 2-point margin over `5x8`/`tb-8` on a 44-pixel sample, and ~30% residual
+  a weak win: only a ~2-point margin over `5x8`/`tb-8` on a 44-pixel sample, and ~30% residual
   mismatch either way. This could mean Tidbyt used a custom font for the arrival line, or that the
   4px scale is simply too small for reliable discrimination against a photographically blurred
   reference (max channel ≈ 57, box-downsampled from a photo — see
   [The reference frame was recovered exactly](#the-reference-frame-was-recovered-exactly)).
   `tom-thumb` is the best available evidence, not a confident identification.
 
-  Full methodology and probe output: `tools/fontprobe.py` plus the shift-corrected, full-width
-  comparison in the Task 2 report (`kubedeploy/.superpowers/sdd/2026-07-27-nyc-subway-recreation/task-2-report.md`).
+  **This table is reproducible.** `tools/fontprobe.py`, committed in this repo, implements the
+  full method (true-width comparison + horizontal alignment search + out-of-bounds exclusion) as
+  its default output — not just the numbers a naive fixed-window/zero-shift probe would report.
+  Run `PIXLET=$(command -v pixlet) python3 tools/fontprobe.py` to regenerate this table.
 
 ## Future work
 
