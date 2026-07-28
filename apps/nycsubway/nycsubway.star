@@ -50,14 +50,19 @@ ARRIVAL_TOP = 7
 
 def render_row(route_id, route_color, destination, arrival_text):
     """One train: bullet, marquee destination, arrival line."""
-    bullet = render.Circle(
-        diameter = BULLET_DIAMETER,
-        color = route_color,
-        child = render.Padding(
-            pad = (0, 0, 0, 2),
-            child = render.Text(route_id, font = FONT_DEST, color = COLOR_BULLET_TEXT),
-        ),
-    )
+    if route_id == "":
+        # "no trains" placeholder -- a dim, letterless bullet rather than an
+        # empty coloured circle (which would render as a stray black dot).
+        bullet = render.Circle(diameter = BULLET_DIAMETER, color = "#222222")
+    else:
+        bullet = render.Circle(
+            diameter = BULLET_DIAMETER,
+            color = route_color,
+            child = render.Padding(
+                pad = (0, 0, 0, 2),
+                child = render.Text(route_id, font = FONT_DEST, color = COLOR_BULLET_TEXT),
+            ),
+        )
     text_col = render.Stack(
         children = [
             render.Box(
@@ -125,6 +130,10 @@ def stop_names():
         names[s["id"]] = s["name"]
     return names
 
+# A trip whose estimated arrival is further than this many seconds in the past
+# is treated as departed/stale rather than "now" -- see format_arrival below.
+STALE_GRACE_SECONDS = 30
+
 def format_arrival(seconds_away):
     if seconds_away < 60:
         return "now"
@@ -142,7 +151,16 @@ def fetch_trips(settings):
         if data != None:
             upcoming = data.get("upcoming_trips", {}).get(direction, [])
             if len(upcoming) > 0:
-                trip = upcoming[0]
+                candidate = upcoming[0]
+                raw_arrival = candidate.get("estimated_current_stop_arrival_time")
+                # Only treat it as upcoming if the arrival time is missing
+                # (handled below, tolerantly) or not more than a small grace
+                # period in the past. A feed entry whose train departed
+                # minutes ago must not be selected here -- format_arrival
+                # would otherwise read "now" forever (it has no lower bound
+                # of its own).
+                if raw_arrival == None or (raw_arrival - now) >= -STALE_GRACE_SECONDS:
+                    trip = candidate
         if trip == None:
             out.append({
                 "route_id": "",
@@ -151,12 +169,17 @@ def fetch_trips(settings):
                 "arrival": "",
             })
         else:
-            dest_id = trip.get("destination_stop", "")
+            route_id = trip.get("route_id", "")
+            # `or ""` (not just a .get default) so a present-but-null
+            # destination_stop also falls back cleanly.
+            dest_id = trip.get("destination_stop") or ""
+            raw_arrival = trip.get("estimated_current_stop_arrival_time")
+            arrival_text = "" if raw_arrival == None else format_arrival(raw_arrival - now)
             out.append({
-                "route_id": trip["route_id"],
-                "color": colors.get(trip["route_id"], "#888888"),
+                "route_id": route_id,
+                "color": colors.get(route_id, "#888888"),
                 "destination": names.get(dest_id, dest_id),
-                "arrival": format_arrival(trip["estimated_current_stop_arrival_time"] - now),
+                "arrival": arrival_text,
             })
     return out
 
