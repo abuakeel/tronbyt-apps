@@ -1,0 +1,12 @@
+---
+id: nycsubway
+name: NYC Subway
+summary: Real-time subway departures
+desc: >-
+  Recreation of Tidbyt's closed-source first-party NYC Subway app. Shows the next
+  train in each direction at one station, with the official MTA route bullet.
+  NOTE: the tronbyt server IGNORES this file for user-repo apps -- metadata comes
+  from the directory name. Kept for documentation only.
+author: recreation of a Tidbyt original
+fileName: nycsubway.star
+packageName: nycsubway
