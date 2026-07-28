@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Render-vs-reference pixel diff for the NYC Subway recreation.
 
-The reference (reference/subway-64x32.png) was recovered by downsampling a
-screenshot of the original Tidbyt app, so it is dim: box-averaging blended each
-lit LED with the dark gaps around it (max channel ~57). Both images are
-brightness-normalised before comparison so absolute levels do not matter --
-only which pixels are lit, and their relative colour.
+The reference (reference/subway-64x32.png) is grid-sampled from an LED
+simulator screenshot (reference/subway.png) at each LED's dot centre --
+see tools/regenerate_reference.py for the exact grid parameters. It is
+still dim (max channel well under 255) because each sample is a 5x5 box
+average centred on the dot. Both images are brightness-normalised before
+comparison so absolute levels do not matter -- only which pixels are lit,
+and their relative colour.
 """
 import sys
 from PIL import Image
@@ -17,7 +19,7 @@ W, H = 64, 32
 STATIC_REGIONS = {
     "divider":     (0, 15, 64, 16),
     "bullet_north": (2, 2, 15, 15),
-    "bullet_south": (2, 17, 15, 30),
+    "bullet_south": (2, 18, 15, 31),
 }
 
 def load_norm(path):
