@@ -1,0 +1,46 @@
+{
+    "_comment": [
+        "Route colour type guard (final review, IMPORTANT 1). GTFS route_color is",
+        "six hex digits with NO leading '#'; api.subwaynow.app currently adds one",
+        "itself, but nothing guarantees that stays true, and",
+        "render.Circle(color = '6cbe45') fails FATALLY if it isn't normalized first.",
+        "route_colors() must not trust the API's 'color' field shape at all.",
+        "",
+        "Three malformed/edge shapes in one 'routes' payload:",
+        "  G       -- bare six-hex-digit string (no '#'), the actual GTFS shape.",
+        "             Must be normalized to '#6cbe45' and used to render, not",
+        "             skipped -- north+south below exactly mirror the reference",
+        "             fixture's own G35 trips (route G, FIX_N/G21, 30s -> 'now'),",
+        "             so a correct normalization renders PIXEL-IDENTICAL to",
+        "             reference/subway-64x32.png (checked via",
+        "             'assert_matches_reference' below).",
+        "  BADNUM  -- color is an int (123), not a string at all. Not used by",
+        "             any trip here, but route_colors() iterates every routes",
+        "             entry unconditionally on every render, so the type guard",
+        "             must reject this without crashing regardless of whether",
+        "             the route ever appears in a trip.",
+        "  BADNAME -- color is a string but not a valid hex shape",
+        "             ('chartreuse', length 10). Same reasoning as BADNUM: must",
+        "             be rejected without crashing, whether or not it's ever",
+        "             assigned to a trip."
+    ],
+    "routes": {
+        "routes": {
+            "G": {"id": "G", "color": "6cbe45"},
+            "BADNUM": {"id": "BADNUM", "color": 123},
+            "BADNAME": {"id": "BADNAME", "color": "chartreuse"}
+        }
+    },
+    "stop": {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [
+                {"route_id": "G", "destination_stop": "FIX_N", "arrival_offset": 30}
+            ],
+            "south": [
+                {"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}
+            ]
+        }
+    },
+    "assert_matches_reference": true
+}

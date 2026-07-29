@@ -3,10 +3,13 @@ load("http.star", "http")
 load("time.star", "time")
 
 # --- fonts: measured against the reference in tools/fontprobe.py (Task 2) ---
-# Dina_r400-6: 21.8% glyph mismatch on destination text, and (Task 3 review,
-# 2026-07-27) also renders the bullet's "G" exactly once repositioned -- see
-# render_row's bullet below. Used for both destination text and the bullet
-# letter, since both need the same visual weight.
+# Dina_r400-6: 27.9% glyph mismatch on destination text (best-fit alignment,
+# measured against the CORRECTED reference -- see the FONT_TIME comment below
+# for why an earlier 21.8% figure, measured against a corrupt reference, is
+# wrong), and (Task 3 review, 2026-07-27) also renders the bullet's "G"
+# exactly once repositioned -- see render_row's bullet below. Used for both
+# destination text and the bullet letter, since both need the same visual
+# weight.
 FONT_DEST = "Dina_r400-6"
 
 # tom-thumb was the Task 2 pick, but that measurement ran against a
@@ -20,7 +23,7 @@ FONT_TIME = "5x8"
 
 # --- colours: extracted from reference/subway-64x32.png (Task 3 Step 1) ---
 # Peak (brightest, least anti-aliased) pixel found in each hue cluster after
-# brightness-normalising the reference -- see tools/compare.py's load_norm().
+# brightness-normalising the reference -- see tools/compare.py's load_scaled().
 COLOR_DEST = "#fafafa"
 COLOR_TIME = "#f1aa35"
 COLOR_DIVIDER = "#333333"
@@ -30,6 +33,12 @@ COLOR_DIVIDER = "#333333"
 # inspection of the corrected reference (no white pixel anywhere inside the
 # bullet, only shades of the route colour and near-black).
 COLOR_BULLET_TEXT = "#000000"
+
+# The "no trains" placeholder bullet: dim rather than a stray black dot, and
+# a real colour (not a hardcoded literal duplicated in render_row) so
+# fetch_trips's placeholder dict has one meaningful "color" value shared by
+# every trip dict, placeholder or real (final review, MINOR 3).
+COLOR_BULLET_DIM = "#222222"
 
 BULLET_DIAMETER = 11
 DEST_WIDTH = 48
@@ -53,7 +62,9 @@ def render_row(route_id, route_color, destination, arrival_text):
     if route_id == "":
         # "no trains" placeholder -- a dim, letterless bullet rather than an
         # empty coloured circle (which would render as a stray black dot).
-        bullet = render.Circle(diameter = BULLET_DIAMETER, color = "#222222")
+        # route_color is fetch_trips's COLOR_BULLET_DIM placeholder value --
+        # used here instead of a second hardcoded literal.
+        bullet = render.Circle(diameter = BULLET_DIAMETER, color = route_color)
     else:
         bullet = render.Circle(
             diameter = BULLET_DIAMETER,
@@ -108,6 +119,35 @@ def fetch_json(url, ttl):
         return None
     return resp.json()
 
+_HEX_DIGITS = "0123456789abcdefABCDEF"
+
+def normalize_color(color):
+    """Returns a '#RRGGBB' string for a valid route colour, else None.
+
+    GTFS specifies route_color as six hex digits with NO leading '#'. The
+    live API currently adds one itself (verified 29/29 live routes, all
+    length 7), but nothing guarantees that stays true, and
+    render.Circle(color = ...) raises a FATAL Starlark error on anything
+    that isn't a real colour string -- crashing every render, not just this
+    route's bullet (final review, IMPORTANT 1). Trusts nothing about the
+    shape: a non-string is rejected outright; a bare six-hex-digit string is
+    normalized by prefixing '#'; anything else (wrong length, non-hex
+    characters, e.g. "chartreuse") is rejected. The caller skips a rejected
+    entry and falls back to a default bullet colour.
+    """
+    if type(color) != "string":
+        return None
+    if len(color) == 7 and color[0] == "#":
+        hex_part = color[1:]
+    elif len(color) == 6:
+        hex_part = color
+    else:
+        return None
+    for c in hex_part.elems():
+        if c not in _HEX_DIGITS:
+            return None
+    return "#" + hex_part
+
 def route_colors():
     data = fetch_json(ROUTES_URL, 86400)
     colors = {}
@@ -115,12 +155,21 @@ def route_colors():
         return colors
 
     # The live API keys "routes" by route id (a dict), not a list. Entries
-    # missing "id" or "color" are skipped rather than direct-indexed -- a
-    # malformed routes payload must not crash the render.
+    # missing "id" or "color" are skipped rather than direct-indexed, and
+    # normalize_color() rejects a "color" of the wrong type or shape (see
+    # its docstring). Together these guard the two crashes verified fatal in
+    # the final review: a non-string/malformed-string color reaching
+    # render.Circle (IMPORTANT 1, fixed here) and a KeyError on a missing
+    # "id"/"color" key. This does NOT guard every possible malformed shape:
+    # a non-string route_id still reaches render.Text() unchanged later
+    # (fatal), and a routes entry that isn't a dict at all would fail at
+    # r.get() below, before this loop's guards even run. Neither has been
+    # observed from the live API; only the colour-shape crash was, which is
+    # why only it was hardened.
     routes = data.get("routes", {}) or {}
     for r in routes.values():
         route_id = r.get("id")
-        color = r.get("color")
+        color = normalize_color(r.get("color"))
         if route_id and color:
             colors[route_id] = color
     return colors
@@ -130,8 +179,12 @@ def stop_names():
     names = {}
     if data == None:
         return names
-    # Entries missing "id" or "name" are skipped rather than direct-indexed --
-    # a malformed stops payload must not crash the render.
+    # Entries missing "id" or "name" are skipped rather than direct-indexed,
+    # preventing a KeyError on those two keys specifically. This does NOT
+    # guarantee immunity to every malformed shape: a non-string "name" still
+    # reaches destination.upper() unchanged later (fatal), and a stops entry
+    # that isn't a dict at all would fail at s.get() below, before this
+    # loop's guard even runs. Neither has been observed from the live API.
     for s in data.get("stops", []) or []:
         stop_id = s.get("id")
         name = s.get("name")
@@ -179,7 +232,7 @@ def fetch_trips(settings):
         if trip == None:
             out.append({
                 "route_id": "",
-                "color": "#000000",
+                "color": COLOR_BULLET_DIM,
                 "destination": "no trains",
                 "arrival": "",
             })

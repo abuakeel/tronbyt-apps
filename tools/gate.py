@@ -256,6 +256,21 @@ def run_one_failure_case(case_path, default_routes, default_stops):
                     f"(pixel diff vs the equivalent single-trip render)\n{report2}"
                 )
 
+        # 'assert_matches_reference': true -- a stronger check than the
+        # divider-only gate above, for cases engineered to reproduce the
+        # reference fixture's exact trips (same route/destination/arrival)
+        # through a different code path (e.g. a bare-hex route colour that
+        # must normalize to the same colour the reference fixture spells
+        # with a leading '#'). Requires a 0-pixel whole-frame diff against
+        # reference/subway-64x32.png itself, not just a second mock render.
+        if case.get("assert_matches_reference"):
+            fail3, report3 = compare_images(str(out_path), str(REFERENCE_PNG), strict_whole_frame=True)
+            if fail3:
+                return False, (
+                    f"{name}: FAIL -- did not reproduce the reference frame "
+                    f"(pixel diff vs reference/subway-64x32.png)\n{report3}"
+                )
+
         return True, f"{name}: OK"
 
 

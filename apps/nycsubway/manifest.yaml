@@ -18,6 +18,18 @@ desc: >-
   every Pixlet app, not app-specific behaviour -- see tools/gate.py's module
   docstring and the Task 5 report for how this was verified (read pixlet's own
   runtime/modules/starlarkhttp source, and reproduced the fatal error directly).
+  The reassuring half of that story (final review, confirmed by reading
+  tronbyt/server's own source): a render failure is NOT sticky. The server
+  sets EmptyLastRender=true and rotation skips the app that cycle
+  (rotation.go:217,240,311), but LastRender is updated regardless, so the
+  server retries the render at the next UInterval automatically -- there is no
+  broken flag set by a failed render and no manual re-enable needed. ("broken"
+  is a separate, manual UI-only curation flag an operator sets by hand; a
+  render failure never sets it.) A pinned app falls through to normal rotation
+  without being unpinned (rotation.go:247) rather than getting stuck. So a WAN
+  or DNS outage is transient and self-recovering: the app blinks out of
+  rotation while the outage lasts and resumes on its own the moment
+  api.subwaynow.app is reachable again, with no operator action required.
 author: recreation of a Tidbyt original
 fileName: nycsubway.star
 packageName: nycsubway

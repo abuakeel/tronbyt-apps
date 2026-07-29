@@ -143,7 +143,10 @@ rows  1-14 : train 1 (north)
 row     15 : divider, full width
 rows 17-30 : train 2 (south)
 
-per row:  bullet  x3-13   11px filled circle, route colour, white letter centred
+per row:  bullet  x2-12   11px filled circle, route colour, letter knocked out in BLACK,
+                          centred (final review: corrected from an earlier "white letter"
+                          claim -- white would vanish into the lit circle; see
+                          COLOR_BULLET_TEXT in nycsubway.star)
           dest    x16+    UPPERCASE, white, ~6px font, marquee right-to-left
           arrival x16+    orange, 4px font, below dest: "now" under 1 min, else minutes
 ```
@@ -186,8 +189,12 @@ GitOps pattern used everywhere else. The 900s HTTPRoute timeout in
 
 Pixlet apps are stateless per render, so there is no cache to fall back on.
 
-- **Feed unreachable / HTTP error:** render the static layout with `--` in place of every arrival
-  rather than failing. A blank or errored app in rotation is worse than a stale-looking one.
+- **Feed unreachable / HTTP error:** render the static layout rather than failing. Corrected
+  2026-07-28 (final review) -- the shipped behaviour is not `--` in place of the arrival; it is
+  the literal text `NO TRAINS` in the destination line with a blank arrival line and a dim,
+  letterless bullet (see `fetch_trips`'s placeholder dict and `render_row` in
+  `apps/nycsubway/nycsubway.star`). A blank or errored app in rotation is worse than an
+  explicit "nothing scheduled" state.
 - **No upcoming trains in a direction** (overnight, service change): keep the row and its bullet,
   render the literal text `no trains` in place of the destination, leave the arrival line blank.
   Dropping the row would reflow the other and change the layout.
@@ -215,17 +222,31 @@ Pixlet apps are stateless per render, so there is no cache to fall back on.
   | Line | Chosen font | Match quality | Runner-up |
   |---|---|---|---|
   | Destination (`FONT_DEST`) | **`Dina_r400-6`** | 64/294 px mismatch (21.8%) at best alignment, vs 103/264 (39.0%) for `5x8` and 102/258 (39.5%) for `tb-8` — a clear, decisive win | `5x8` (39.0% mismatch) |
-  | Arrival (`FONT_TIME`) | **`tom-thumb`** | 13/44 px mismatch (29.5%) at best alignment | `5x8` / `tb-8` (tied, 31.7% mismatch — both render "now" identically) |
+  | Arrival (`FONT_TIME`) | ~~**`tom-thumb`**~~ **`5x8`** | ~~13/44 px mismatch (29.5%) at best alignment~~ **0/60 px mismatch (0.0%)** at best alignment — an exact match | ~~`5x8` / `tb-8` (tied, 31.7% mismatch — both render "now" identically)~~ `tom-thumb` (34.1% mismatch, a distant third) |
 
-  **Honest caveat on match quality:** neither is a clean pixel match. `Dina_r400-6` is a
-  reasonably strong candidate (~78% agreement, and the mismatched pixels are concentrated at the
-  leading edge — consistent with the known mid-scroll clipping, not a wrong font). `tom-thumb` is
-  a weak win: only a ~2-point margin over `5x8`/`tb-8` on a 44-pixel sample, and ~30% residual
-  mismatch either way. This could mean Tidbyt used a custom font for the arrival line, or that the
-  4px scale is simply too small for reliable discrimination against a photographically blurred
-  reference (max channel ≈ 57, box-downsampled from a photo — see
-  [The reference frame was recovered exactly](#the-reference-frame-was-recovered-exactly)).
-  `tom-thumb` is the best available evidence, not a confident identification.
+  > **Corrected 2026-07-28 (final review).** The `FONT_TIME` row above is the
+  > **original Task 2 measurement**, taken against a corrupted reference image (see
+  > `tools/regenerate_reference.py` and the Task 3 fix report — the reference PNG was
+  > a phase-misaligned resample, not sampled at the LED grid). Re-run against the
+  > corrected reference, `tom-thumb` is not the pick: `5x8` and `tb-8` both reproduce
+  > "now" with **0 pixel difference**, while `tom-thumb` mismatches 34.1%. The app
+  > uses `FONT_TIME = "5x8"` (`apps/nycsubway/nycsubway.star`). `FONT_DEST`'s pick
+  > (`Dina_r400-6`) is still correct, but its own mismatch figure is also stale —
+  > against the corrected reference it is 82/294 (27.9%), not 64/294 (21.8%); the
+  > `nycsubway.star` comment carries the corrected number. Re-running
+  > `tools/fontprobe.py` now reproduces both corrected figures directly.
+
+  **Honest caveat on match quality (original Task 2 reasoning, pre-correction — see the
+  callout above for what changed):** neither is a clean pixel match against the *corrupted*
+  reference this was measured against. `Dina_r400-6` is a reasonably strong candidate (~78%
+  agreement, and the mismatched pixels are concentrated at the leading edge — consistent with
+  the known mid-scroll clipping, not a wrong font). `tom-thumb` looked like a weak win: only a
+  ~2-point margin over `5x8`/`tb-8` on a 44-pixel sample, and ~30% residual mismatch either way.
+  Against the *corrected* reference this caveat evaporates for the arrival line: `5x8`/`tb-8`
+  match exactly (0.0%), so there is no ambiguity left there. It stands only for `FONT_DEST`,
+  where the corrected 27.9% residual (still concentrated at the leading edge — see
+  [The reference frame was recovered exactly](#the-reference-frame-was-recovered-exactly))
+  remains real and unexplained.
 
   **This table is reproducible.** `tools/fontprobe.py`, committed in this repo, implements the
   full method (true-width comparison + horizontal alignment search + out-of-bounds exclusion) as

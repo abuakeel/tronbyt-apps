@@ -27,8 +27,43 @@ python3 tools/compare.py /tmp/out.webp
 ```
 
 `tools/compare.py` diffs against `reference/subway-64x32.png`, a frame recovered
-from a screenshot of the original Tidbyt app. Static regions (bullet, divider)
-must match exactly; text regions are expected to differ.
+from a screenshot of the original Tidbyt app. Only the **divider** is a truly
+static region and must match exactly; the bullet carries the live route's
+colour and letter, so it is not static (a different route legitimately next
+looks like a "mismatch" that isn't a bug — see `tools/compare.py`'s
+`STATIC_REGIONS` comment). Text regions are expected to differ too.
+
+## The real gate: `tools/gate.py`
+
+`compare.py` above is a quick manual spot-check against whatever the live feed
+happens to return right now. `tools/gate.py` is the actual pass/fail harness —
+it pins *what the "live" data is* via a local mock HTTP server, so results are
+deterministic instead of depending on which train is next when you happen to
+run it. It never adds a fixture-mode branch to `nycsubway.star` itself (see the
+module docstring for why) — it substitutes the mock server's URL for the real
+API host in a tempfile copy of the app before rendering.
+
+```bash
+python3 tools/gate.py                 # default: render the pinned reference fixture,
+                                       # require the WHOLE 64x32 frame to match
+                                       # reference/subway-64x32.png with 0 differing pixels
+
+python3 tools/gate.py --failures      # render every tools/fixtures/failures/*.json case
+                                       # (malformed/missing feed data, HTTP errors, stale
+                                       # trips, ...); each must render without a Starlark
+                                       # error and keep the divider region intact
+
+python3 tools/gate.py --live          # render against the REAL live API; informational
+                                       # only (never gates on the whole-frame diff, since
+                                       # real destinations/arrivals legitimately differ from
+                                       # the reference) -- then cross-checks the mock server
+                                       # against a live snapshot and calls --refresh-fixture
+
+python3 tools/gate.py --refresh-fixture   # re-fetch the three live endpoints and diff KEY
+                                           # SETS (not values) against the pinned fixture, so
+                                           # an API shape change is caught even though no
+                                           # other mode exercises the live shape directly
+```
 
 ## Pixlet version matters
 
