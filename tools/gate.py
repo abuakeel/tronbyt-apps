@@ -101,13 +101,16 @@ def read_patched_star(port):
     return src.replace(LIVE_HOST, f"http://127.0.0.1:{port}/")
 
 
-def render_source(src, out_path, timeout=30):
+def render_source(src, out_path, timeout=30, app_config=None):
     pixlet = find_pixlet()
     with tempfile.TemporaryDirectory() as td:
         star_path = Path(td) / "nyc-subway.star"
         star_path.write_text(src)
+        cmd = [pixlet, "render", str(star_path), "-o", str(out_path)]
+        if app_config:
+            cmd += [f"{k}={v}" for k, v in app_config.items()]
         return subprocess.run(
-            [pixlet, "render", str(star_path), "-o", str(out_path)],
+            cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -184,11 +187,11 @@ def stop_server(httpd):
     httpd.server_close()
 
 
-def render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=None):
+def render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=None, app_config=None):
     httpd, port = start_server(routes_body, stops_body, stop_template, http_status=http_status)
     try:
         patched = read_patched_star(port)
-        return render_source(patched, out_path)
+        return render_source(patched, out_path, app_config=app_config)
     finally:
         stop_server(httpd)
 
@@ -221,13 +224,14 @@ def run_one_failure_case(case_path, default_routes, default_stops):
     routes_body = case.get("routes", default_routes)
     stops_body = case.get("stops", default_stops)
     stop_template = case.get("stop")
+    app_config = case.get("config")
 
     if http_status is None and stop_template is None:
         return False, f"{name}: FAIL -- fixture has neither 'http_status' nor 'stop'"
 
     with tempfile.TemporaryDirectory() as td:
         out_path = Path(td) / "frame.webp"
-        result = render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=http_status)
+        result = render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=http_status, app_config=app_config)
         if result.returncode != 0:
             return False, (
                 f"{name}: FAIL -- pixlet render crashed (exit {result.returncode})\n"

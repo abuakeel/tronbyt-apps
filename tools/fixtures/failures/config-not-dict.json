@@ -1,0 +1,7 @@
+{
+  "_note": "Valid JSON of the wrong type (a list, not a dict). get_settings must check type(decoded) == \"dict\" and fall back rather than calling .get() on a list.",
+  "config": {"station": "[1,2,3]"},
+  "stop": {"id": "G35", "upcoming_trips": {
+    "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
+    "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}}
+}

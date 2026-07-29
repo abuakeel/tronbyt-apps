@@ -1,0 +1,7 @@
+{
+  "_note": "A well-formed dict blob, but the 'value' key is absent. get_settings must fall back to DEFAULT_STOP_ID rather than crashing on a missing key.",
+  "config": {"station": "{\"display\":\"Somewhere\"}"},
+  "stop": {"id": "G35", "upcoming_trips": {
+    "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
+    "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}}
+}

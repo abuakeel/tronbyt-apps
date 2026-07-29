@@ -1,0 +1,7 @@
+{
+  "_note": "An empty string 'value'. An empty string must not become the stop ID -- get_settings must treat it the same as missing and fall back to DEFAULT_STOP_ID.",
+  "config": {"station": "{\"display\":\"Somewhere\",\"value\":\"\"}"},
+  "stop": {"id": "G35", "upcoming_trips": {
+    "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
+    "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}}
+}

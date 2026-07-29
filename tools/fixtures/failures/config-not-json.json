@@ -1,0 +1,7 @@
+{
+  "_note": "A config blob that is not JSON at all. json.decode's two-argument form must return the default rather than raising -- the one-argument form is fatal and Starlark cannot catch it.",
+  "config": {"station": "this is not json"},
+  "stop": {"id": "G35", "upcoming_trips": {
+    "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
+    "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}}
+}

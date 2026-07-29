@@ -1,6 +1,7 @@
 load("render.star", "render")
 load("http.star", "http")
 load("time.star", "time")
+load("encoding/json.star", "json")
 
 # --- fonts: measured against the reference in tools/fontprobe.py (Task 2) ---
 # Dina_r400-6: 27.9% glyph mismatch on destination text (best-fit alignment,
@@ -101,17 +102,29 @@ STOPS_URL = "https://api.subwaynow.app/stops/"
 ROUTES_URL = "https://api.subwaynow.app/routes/"
 
 # --- configuration seam -----------------------------------------------------
-# Hardcoded today. To add a station picker later, implement get_schema() and
-# these config.str() calls start returning user values -- NO other code changes.
-# Nothing outside get_settings() may reference this constant by name.
-DEFAULT_STOP_ID = "G35"  # Clinton - Washington Avs
+# Nothing outside get_settings() may reference these constants by name.
+DEFAULT_STOP_ID = "G35"  # Clinton - Washington Avs (G)
+DEFAULT_STATION_JSON = '{"display": "Clinton - Washington Avs (G)", "value": "G35"}'
 DEFAULT_DIRECTIONS = ["north", "south"]
 
 def get_settings(config):
-    return {
-        "stop_id": config.str("stop_id", DEFAULT_STOP_ID),
-        "directions": DEFAULT_DIRECTIONS,
-    }
+    """The ONE place station config is read. Adding fields here is contained;
+    nothing downstream knows where the stop id came from."""
+    stop_id = DEFAULT_STOP_ID
+    raw = config.get("station", DEFAULT_STATION_JSON)
+
+    # TWO-ARGUMENT form is load-bearing. json.decode(raw) with one argument is
+    # FATAL on malformed input, and Starlark has no try/except -- a corrupt
+    # config blob would kill every render with no way to recover. The second
+    # argument is returned instead of raising.
+    decoded = json.decode(raw, None)
+
+    if type(decoded) == "dict":
+        value = decoded.get("value")
+        if type(value) == "string" and value:
+            stop_id = value
+
+    return {"stop_id": stop_id, "directions": DEFAULT_DIRECTIONS}
 
 def fetch_json(url, ttl):
     resp = http.get(url, ttl_seconds = ttl)
