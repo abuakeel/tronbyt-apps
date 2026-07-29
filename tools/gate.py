@@ -39,6 +39,10 @@ Modes:
                        (not values) against reference-frame.json, so an API
                        shape change is caught even though nothing else here
                        exercises the live shape directly.
+  --handler           probe search_stations() via a print()-based harness:
+                       labelling, case-insensitivity, the MAX_SEARCH_RESULTS
+                       cap against a synthetic over-cap fixture, and
+                       must-never-raise on a fetch failure.
 """
 import argparse
 import copy
@@ -325,8 +329,10 @@ def run_one_failure_case(case_path, default_routes, default_stops):
 def read_patched_star_source():
     """URL-patched app source with its own main() stripped off.
 
-    The probe appends its own main(); leaving the real one in place would mean
-    two definitions, and the last one silently wins. Stripping is explicit.
+    The probe appends its own main(); leaving the real one in place would
+    mean two definitions of the global `main`, and Starlark raises "cannot
+    reassign global main" rather than letting the last one silently win.
+    Stripping is still required -- just not for that reason.
     """
     src = APP_SRC.read_text()
     if src.count(LIVE_HOST) != EXPECTED_LIVE_HOST_COUNT:
@@ -347,6 +353,14 @@ def run_probe(src_without_main, stops_body):
 
     Starlark print() reaches stdout as '[<app>.star] <line>'; the prefix is
     stripped so callers compare against plain strings.
+
+    The caller's probe source MUST print a "PROBE-DONE" sentinel as its last
+    line. Without this, a crashing render (returncode != 0) yields no stdout
+    lines at all, which collapses to the same empty list as a probe that ran
+    fine and legitimately found zero matches -- making a real crash
+    indistinguishable from "no matches" to anything that only looks at
+    `lines`. Asserting the sentinel (and a clean exit) turns that silent
+    swallow into a loud RuntimeError.
     """
     httpd, port = start_server({"routes": {}}, stops_body, None)
     try:
@@ -360,6 +374,12 @@ def run_probe(src_without_main, stops_body):
             for line in result.stdout.splitlines():
                 if line.startswith("[") and "] " in line:
                     lines.append(line.split("] ", 1)[1])
+            if result.returncode != 0 or "PROBE-DONE" not in lines:
+                raise RuntimeError(
+                    f"probe crashed or never completed (exit {result.returncode}):\n"
+                    f"{result.stderr}"
+                )
+            lines.remove("PROBE-DONE")
             return lines
     finally:
         stop_server(httpd)
@@ -372,14 +392,16 @@ def cmd_handler():
     appends a main() that calls it and prints one line per option. Starlark
     print() reaches stdout prefixed with "[<app>.star] ".
     """
-    fixture = load_json(REFERENCE_FIXTURE)
     stops_body = {"stops": [
         {"id": "G35", "name": "Clinton - Washington Avs", "routes": {"G": ["north", "south"]}},
         {"id": "A44", "name": "Clinton - Washington Avs", "routes": {"A": ["north", "south"]}},
         {"id": "X01", "name": "Routeless Test Stop"},
     ]}
     checks = [
-        ("clinton", ["Clinton - Washington Avs (A)|A44",
+        # Mixed-case pattern -- covers needle = pattern.lower() (a mutation
+        # that drops .lower() would find nothing here, since none of the
+        # fixture's stop names contain the literal substring "CLINton").
+        ("CLINton", ["Clinton - Washington Avs (A)|A44",
                      "Clinton - Washington Avs (G)|G35"]),
         ("routeless", ["Routeless Test Stop [X01]|X01"]),
         ("zzzznomatch", []),
@@ -391,11 +413,40 @@ def cmd_handler():
             "\n\ndef main(config):\n"
             f"    for o in search_stations(\"{pattern}\"):\n"
             "        print(o.display + \"|\" + o.value)\n"
+            "    print(\"PROBE-DONE\")\n"
             "    return render.Root(child = render.Box(color = \"#000000\"))\n"
         )
-        got = run_probe(src, stops_body)
+        try:
+            got = run_probe(src, stops_body)
+        except RuntimeError as e:
+            failures.append(f"  {pattern!r}: {e}")
+            continue
         if sorted(got) != sorted(expected):
             failures.append(f"  {pattern!r}: expected {expected}, got {got}")
+
+    # MAX_SEARCH_RESULTS cap: the 3-stop fixture above never has more than 2
+    # matches for anything, so it cannot exercise the 20-result cap at all --
+    # deleting the cap's `break`, or loosening MAX_SEARCH_RESULTS to 21 or
+    # 999, would still pass every check above. 25 synthetic stops, all
+    # matching "cap", forces the cap to actually bind.
+    cap_stops_body = {"stops": [
+        {"id": "CAP%02d" % i, "name": "Captain Stop %d" % i, "routes": {"C": ["north"]}}
+        for i in range(25)
+    ]}
+    src = read_patched_star_source()
+    src += (
+        "\n\ndef main(config):\n"
+        "    print(\"cap=\" + str(len(search_stations(\"cap\"))))\n"
+        "    print(\"PROBE-DONE\")\n"
+        "    return render.Root(child = render.Box(color = \"#000000\"))\n"
+    )
+    try:
+        cap_lines = run_probe(src, cap_stops_body)
+    except RuntimeError as e:
+        failures.append(f"  cap: {e}")
+    else:
+        if cap_lines != ["cap=20"]:
+            failures.append(f"  cap: expected ['cap=20'], got {cap_lines}")
 
     # Feed down: the handler must return [] and MUST NOT raise. A raising
     # handler would break the config UI itself, not just the render, and

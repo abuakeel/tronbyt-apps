@@ -117,25 +117,35 @@ def station_label(stop):
     by two or more stops ('7 Av' is three different stations), so a name-only
     label is ambiguous. Stops with no routes fall back to the stop id for the
     same reason.
+
+    Route letters reflect CURRENT service, not a permanent label: stop `A44`
+    shows `(C)` in the afternoon and `(A)` overnight, since the C doesn't run
+    then. This is harmless here -- only `value` (the bare stop id) is read
+    back by get_settings(); `display` is never persisted or compared.
     """
     routes = stop.get("routes")
     if type(routes) == "dict" and len(routes) > 0:
-        return stop["name"] + " (" + "".join(sorted(routes.keys())) + ")"
+        return stop["name"] + " (" + "/".join(sorted(routes.keys())) + ")"
     return stop["name"] + " [" + stop["id"] + "]"
 
 def search_stations(pattern):
     """Typeahead handler. Returns at most MAX_SEARCH_RESULTS options.
 
     Must never raise -- a failed fetch yields an empty result list, which the
-    picker shows as 'no matches'.
+    picker shows as 'no matches'. Tolerates a non-dict top-level body, a
+    missing/null/wrong-type "stops" key, and non-dict/malformed entries within
+    it -- none of those should be able to take down the config UI.
     """
     data = fetch_json(STOPS_URL, 86400)
-    if data == None:
+    if data == None or type(data) != "dict":
         return []
 
     needle = pattern.lower()
     out = []
-    for stop in data.get("stops", []):
+    stops = data.get("stops", []) or []
+    if type(stops) != "list":
+        return []
+    for stop in stops:
         if type(stop) != "dict":
             continue
         name = stop.get("name")
@@ -182,10 +192,17 @@ def get_settings(config):
     return {"stop_id": stop_id, "directions": DEFAULT_DIRECTIONS}
 
 def fetch_json(url, ttl):
+    """Fetches url and decodes the body as JSON, or None on any failure.
+
+    TWO-ARGUMENT json.decode (returning None instead of raising) is
+    load-bearing here, same reason as get_settings(): resp.json() is FATAL on
+    a non-JSON body (e.g. a 200-with-HTML response from a proxy), and
+    Starlark has no try/except for a caller to recover with.
+    """
     resp = http.get(url, ttl_seconds = ttl)
     if resp.status_code != 200:
         return None
-    return resp.json()
+    return json.decode(resp.body(), None)
 
 _HEX_DIGITS = "0123456789abcdefABCDEF"
 

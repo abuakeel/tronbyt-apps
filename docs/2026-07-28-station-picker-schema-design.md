@@ -54,6 +54,12 @@ Clinton - Washington Avs (G)       -> G35
 > as **three** entries rather than the two a rider might expect. This is the upstream data's
 > grouping, not a labelling choice, and the parenthesised routes keep them unambiguous.
 
+> **The `(A)` / `(G)` route letters above are a snapshot, not a permanent label.** They reflect
+> whatever service is currently running: `A44` shows `(C)` in the afternoon and `(A)` overnight,
+> once the C stops running. Harmless for the picker -- only the bare stop id (`value`) is read
+> back by `get_settings()`, never the display label -- but don't treat this table as a fixed
+> mapping from stop id to route letter.
+
 ## How pixlet typeahead works
 
 Confirmed from `pixlet/docs/schema/typeahead/example.star`:
