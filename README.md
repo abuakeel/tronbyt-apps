@@ -22,7 +22,7 @@ Optional previews follow a convention: `<starname>.webp` and `<starname>@2x.webp
 ## Render and compare
 
 ```bash
-pixlet render apps/nycsubway/nycsubway.star -o /tmp/out.webp
+pixlet render apps/nyc-subway/nyc-subway.star -o /tmp/out.webp
 python3 tools/compare.py /tmp/out.webp
 ```
 
@@ -39,7 +39,7 @@ looks like a "mismatch" that isn't a bug — see `tools/compare.py`'s
 happens to return right now. `tools/gate.py` is the actual pass/fail harness —
 it pins *what the "live" data is* via a local mock HTTP server, so results are
 deterministic instead of depending on which train is next when you happen to
-run it. It never adds a fixture-mode branch to `nycsubway.star` itself (see the
+run it. It never adds a fixture-mode branch to `nyc-subway.star` itself (see the
 module docstring for why) — it substitutes the mock server's URL for the real
 API host in a tempfile copy of the app before rendering.
 

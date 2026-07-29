@@ -69,10 +69,10 @@ A new git repo, peer to `kubedeploy` and `pikube`. Follows the established workf
 ```
 tronbyt-apps/
 ├── apps/
-│   └── nycsubway/
-│       ├── nycsubway.star          <- first *.star found in the dir wins
-│       ├── nycsubway.webp          <- optional preview (convention)
-│       └── nycsubway@2x.webp       <- optional 2x preview
+│   └── nyc-subway/
+│       ├── nyc-subway.star         <- first *.star found in the dir wins
+│       ├── nyc-subway.webp         <- optional preview (convention)
+│       └── nyc-subway@2x.webp      <- optional 2x preview
 ├── tools/
 │   └── compare.py                  <- render + pixel-diff harness
 ├── reference/
@@ -146,7 +146,7 @@ rows 17-30 : train 2 (south)
 per row:  bullet  x2-12   11px filled circle, route colour, letter knocked out in BLACK,
                           centred (final review: corrected from an earlier "white letter"
                           claim -- white would vanish into the lit circle; see
-                          COLOR_BULLET_TEXT in nycsubway.star)
+                          COLOR_BULLET_TEXT in nyc-subway.star)
           dest    x16+    UPPERCASE, white, ~6px font, marquee right-to-left
           arrival x16+    orange, 4px font, below dest: "now" under 1 min, else minutes
 ```
@@ -166,7 +166,7 @@ sha256 `8585ae29652bec004c31c1c5af2d9aa682ae86a87e037db6597a86e52fa2cfac`).
 
 `tools/compare.py` implements the loop:
 
-1. `pixlet render apps/nycsubway/nycsubway.star -o /tmp/out.webp`
+1. `pixlet render apps/nyc-subway/nyc-subway.star -o /tmp/out.webp`
 2. Pillow reads the webp (verified) and converts to RGB
 3. Pixel-diff against `reference/subway-64x32.png`, reporting per-region differences
 
@@ -190,26 +190,43 @@ GitOps pattern used everywhere else. The 900s HTTPRoute timeout in
 Pixlet apps are stateless per render, so there is no cache to fall back on.
 
 - **Feed unreachable / HTTP error:** render the static layout rather than failing. Corrected
-  2026-07-28 (final review) -- the shipped behaviour is not `--` in place of the arrival; it is
-  the literal text `NO TRAINS` in the destination line with a blank arrival line and a dim,
-  letterless bullet (see `fetch_trips`'s placeholder dict and `render_row` in
-  `apps/nycsubway/nycsubway.star`). A blank or errored app in rotation is worse than an
-  explicit "nothing scheduled" state.
-- **No upcoming trains in a direction** (overnight, service change): keep the row and its bullet,
-  render the literal text `no trains` in place of the destination, leave the arrival line blank.
+  2026-07-28 (final review) -- the shipped behaviour is not `--` in place of the arrival; `data`
+  comes back `None`, which routes through the exact same placeholder path as "no upcoming trains"
+  below (see `fetch_trips`'s placeholder dict in `apps/nyc-subway/nyc-subway.star`): destination
+  is set to the literal `"no trains"`, arrival is blank, and the bullet is dim and letterless.
+  `render_row` renders the destination via `.upper()`, so it appears on-screen as `NO TRAINS`. A
+  blank or errored app in rotation is worse than an explicit "nothing scheduled" state.
+- **No upcoming trains in a direction** (overnight, service change): keep the row and its bullet;
+  `fetch_trips` sets destination to the same literal `"no trains"` placeholder as above (again
+  rendered as `NO TRAINS` via `render_row`'s `.upper()`), and leaves the arrival line blank.
   Dropping the row would reflow the other and change the layout.
 - **Malformed/missing `destination_stop`:** fall back to the raw stop ID rather than erroring.
 
 ## Testing
 
-- `pixlet render` succeeds with no Starlark errors.
-- **Static-element fidelity is exact.** Over regions containing no text or live numbers — the
-  bullet, the divider — every pixel must match the reference. These are derived from it, so a
-  mismatch is a bug, not a judgement call.
-- **Text regions compared by position and colour**, not glyph shape: baseline row, left edge and
-  colour of each text element must match. Glyph differences are the one accepted residual.
-- Arrival minutes match a direct API call made at render time.
-- Renders correctly when the feed errors (simulate with an unroutable URL).
+`tools/gate.py` is the actual pass/fail harness (see its module docstring and
+[The real gate](#the-real-gate-toolsgatepy) in the README); what follows is what each of its
+modes actually asserts.
+
+- **`tools/gate.py` (default):** renders the pinned reference fixture through the real code path
+  (mock server substituted for the live host, `nyc-subway.star` itself unmodified) and requires
+  the WHOLE 64×32 frame to match `reference/subway-64x32.png` with **0/2048** differing pixels.
+- **`tools/gate.py --failures`:** all 13 cases in `tools/fixtures/failures/*.json` must each
+  render without a Starlark error, and the **divider must stay intact** in every one. The bullet
+  is deliberately NOT held to the reference here — these fixtures produce non-reference bullets,
+  destinations, and arrivals on purpose.
+- **`tools/gate.py --live`:** renders against the real API. The divider gates (must stay intact);
+  the whole-frame diff against the reference is informational only, since real
+  destinations/arrivals legitimately differ from the pinned fixture. It also cross-checks the
+  bullet regions live-vs-mock-from-live, so a live render and a mock render fed the identical
+  live payload must produce identical bullets.
+- **`compare.py`'s `STATIC_REGIONS`** — the region both the default and `--failures` divider
+  checks key off — is the **divider only** (`tools/compare.py`, `STATIC_REGIONS = {"divider": (0,
+  15, 64, 16)}`). The bullet was removed from this set (Task 5 review): it carries the live
+  route's identity, so an F train legitimately renders an F bullet that will never match a
+  reference captured with a G. That is not a bug.
+- Renders correctly when the feed errors (simulate with an unroutable URL) — covered by the
+  `--failures` HTTP-status cases above.
 - Appears in the tronbyt picker after the user repo is set, and renders on the device.
 
 ## Open items
@@ -230,10 +247,10 @@ Pixlet apps are stateless per render, so there is no cache to fall back on.
   > a phase-misaligned resample, not sampled at the LED grid). Re-run against the
   > corrected reference, `tom-thumb` is not the pick: `5x8` and `tb-8` both reproduce
   > "now" with **0 pixel difference**, while `tom-thumb` mismatches 34.1%. The app
-  > uses `FONT_TIME = "5x8"` (`apps/nycsubway/nycsubway.star`). `FONT_DEST`'s pick
+  > uses `FONT_TIME = "5x8"` (`apps/nyc-subway/nyc-subway.star`). `FONT_DEST`'s pick
   > (`Dina_r400-6`) is still correct, but its own mismatch figure is also stale —
   > against the corrected reference it is 82/294 (27.9%), not 64/294 (21.8%); the
-  > `nycsubway.star` comment carries the corrected number. Re-running
+  > `nyc-subway.star` comment carries the corrected number. Re-running
   > `tools/fontprobe.py` now reproduces both corrected figures directly.
 
   **Honest caveat on match quality (original Task 2 reasoning, pre-correction — see the

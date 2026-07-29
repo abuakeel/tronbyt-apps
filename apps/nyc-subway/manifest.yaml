@@ -1,5 +1,5 @@
 ---
-id: nycsubway
+id: nyc-subway
 name: NYC Subway
 summary: Real-time subway departures
 desc: >-
@@ -26,10 +26,10 @@ desc: >-
   broken flag set by a failed render and no manual re-enable needed. ("broken"
   is a separate, manual UI-only curation flag an operator sets by hand; a
   render failure never sets it.) A pinned app falls through to normal rotation
-  without being unpinned (rotation.go:247) rather than getting stuck. So a WAN
+  without being unpinned (rotation.go:249) rather than getting stuck. So a WAN
   or DNS outage is transient and self-recovering: the app blinks out of
   rotation while the outage lasts and resumes on its own the moment
   api.subwaynow.app is reachable again, with no operator action required.
 author: recreation of a Tidbyt original
-fileName: nycsubway.star
-packageName: nycsubway
+fileName: nyc-subway.star
+packageName: nyc-subway

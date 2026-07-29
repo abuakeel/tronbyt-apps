@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Gate for the NYC Subway recreation (Task 5 review fix).
 
-Governing principle: NO fixture mode inside nycsubway.star's main(). Any
+Governing principle: NO fixture mode inside nyc-subway.star's main(). Any
 `if config.bool("fixture")` branch would be a code path that exists only for
 the gate -- exactly the shape that let the earlier bitmap-overlay defect
 through (Task 3 review). Instead, this tool changes *where bytes come from*,
 never *what code runs*:
 
-  1. Read the committed apps/nycsubway/nycsubway.star verbatim.
+  1. Read the committed apps/nyc-subway/nyc-subway.star verbatim.
   2. Assert it references the real API host ("https://api.subwaynow.app/")
      exactly twice (STOPS_URL, ROUTES_URL) -- if that ever changes, this
      script is out of sync with the app and must be updated, not silently
@@ -16,7 +16,7 @@ never *what code runs*:
      127.0.0.1:<ephemeral port>, write the result to a tempfile, and render
      THAT with the real `pixlet` binary.
 
-Every downstream line of nycsubway.star -- fetch_json, route_colors,
+Every downstream line of nyc-subway.star -- fetch_json, route_colors,
 stop_names, fetch_trips, render_row, render_app, main -- runs completely
 unmodified. A broken app cannot pass by special-casing a fixture flag,
 because there is no such flag to special-case.
@@ -58,7 +58,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from compare import compare_images, lit, load_scaled, scale_from  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-APP_SRC = ROOT / "apps" / "nycsubway" / "nycsubway.star"
+APP_SRC = ROOT / "apps" / "nyc-subway" / "nyc-subway.star"
 REFERENCE_PNG = ROOT / "reference" / "subway-64x32.png"
 FIXTURE_DIR = ROOT / "tools" / "fixtures"
 REFERENCE_FIXTURE = FIXTURE_DIR / "reference-frame.json"
@@ -104,7 +104,7 @@ def read_patched_star(port):
 def render_source(src, out_path, timeout=30):
     pixlet = find_pixlet()
     with tempfile.TemporaryDirectory() as td:
-        star_path = Path(td) / "nycsubway.star"
+        star_path = Path(td) / "nyc-subway.star"
         star_path.write_text(src)
         return subprocess.run(
             [pixlet, "render", str(star_path), "-o", str(out_path)],
