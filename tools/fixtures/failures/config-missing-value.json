@@ -1,7 +1,10 @@
 {
-  "_note": "A well-formed dict blob, but the 'value' key is absent. get_settings must fall back to DEFAULT_STOP_ID rather than crashing on a missing key.",
+  "_note": "A well-formed dict blob, but the 'value' key is absent. get_settings must fall back to DEFAULT_STOP_ID rather than crashing on a missing key. assert_matches_stop is included for defense-in-depth (proves content, not just non-crash), though the realistic regressions here (e.g. direct decoded[\"value\"] indexing) are caught by the crash check above -- see the task-1 fix report for why this fixture is still mostly a crash guard.",
   "config": {"station": "{\"display\":\"Somewhere\"}"},
   "stop": {"id": "G35", "upcoming_trips": {
+    "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
+    "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}},
+  "assert_matches_stop": {"id": "G35", "upcoming_trips": {
     "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
     "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}}
 }

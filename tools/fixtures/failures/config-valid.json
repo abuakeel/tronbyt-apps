@@ -1,0 +1,10 @@
+{
+  "_note": "A well-formed 'station' blob selecting A44 -- a DIFFERENT stop than the G35 default. This is the positive case: proves the config seam is actually HONORED, not just harmless when malformed. The mock server's strict stop-id matching (gate.py) is active here because this fixture passes 'config' -- a get_settings that ignores 'station' would request G35 instead of A44, mismatch against this fixture's stop id 'A44', get a 404, and degrade to 'no trains' placeholders on both directions. assert_matches_stop is a config-independent oracle (no app_config passed to that render, so it stays permissive and always answers with the real A44 content regardless of reversion) -- proving the primary render actually fetched A44's data, not just that it didn't crash.",
+  "config": {"station": "{\"display\":\"Inwood - 207 St (A)\",\"value\":\"A44\"}"},
+  "stop": {"id": "A44", "upcoming_trips": {
+    "north": [{"route_id": "A", "destination_stop": "A02", "arrival_offset": 300}],
+    "south": [{"route_id": "A", "destination_stop": "H01", "arrival_offset": 600}]}},
+  "assert_matches_stop": {"id": "A44", "upcoming_trips": {
+    "north": [{"route_id": "A", "destination_stop": "A02", "arrival_offset": 300}],
+    "south": [{"route_id": "A", "destination_stop": "H01", "arrival_offset": 600}]}}
+}

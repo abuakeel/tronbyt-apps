@@ -1,7 +1,10 @@
 {
-  "_note": "Valid JSON of the wrong type (a list, not a dict). get_settings must check type(decoded) == \"dict\" and fall back rather than calling .get() on a list.",
+  "_note": "Valid JSON of the wrong type (a list, not a dict). get_settings must check type(decoded) == \"dict\" and fall back rather than calling .get() on a list. assert_matches_stop (a config-independent oracle, see gate.py) proves the fallback rendered the REAL G35 content, not merely that it avoided crashing.",
   "config": {"station": "[1,2,3]"},
   "stop": {"id": "G35", "upcoming_trips": {
+    "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
+    "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}},
+  "assert_matches_stop": {"id": "G35", "upcoming_trips": {
     "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
     "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}}
 }

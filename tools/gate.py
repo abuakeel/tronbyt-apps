@@ -141,7 +141,7 @@ def resolve_stop_body(template):
     return body
 
 
-def make_handler(routes_body, stops_body, stop_template, http_status):
+def make_handler(routes_body, stops_body, stop_template, http_status, strict_stop_id=False, requested_ids=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -158,6 +158,26 @@ def make_handler(routes_body, stops_body, stop_template, http_status):
             elif path == "/stops/":
                 body = stops_body
             elif path.startswith("/stops/"):
+                requested_id = path[len("/stops/"):]
+                if requested_ids is not None:
+                    requested_ids.append(requested_id)
+
+                # Strict id matching (final review, IMPORTANT 1/2): without
+                # this, EVERY /stops/<id> request -- whatever <id> the app
+                # actually asked for -- got served the same stop_template
+                # regardless, so no fixture could distinguish "app requested
+                # the right stop" from "app requested the wrong stop"; only
+                # "crashed" vs "didn't crash". A mismatch here is a 404 --
+                # distinguishable from real trip data, not a silent 200 with
+                # the wrong body. Only active when the caller is exercising
+                # real app_config (see render_via_mock) -- every pre-existing
+                # fixture passes no app_config and keeps the original
+                # unconditional-serve behavior untouched.
+                expected_id = stop_template.get("id") if isinstance(stop_template, dict) else None
+                if strict_stop_id and requested_id != expected_id:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 body = resolve_stop_body(stop_template)
             else:
                 self.send_response(404)
@@ -174,8 +194,11 @@ def make_handler(routes_body, stops_body, stop_template, http_status):
     return Handler
 
 
-def start_server(routes_body, stops_body, stop_template, http_status=None):
-    httpd = HTTPServer(("127.0.0.1", 0), make_handler(routes_body, stops_body, stop_template, http_status))
+def start_server(routes_body, stops_body, stop_template, http_status=None, strict_stop_id=False, requested_ids=None):
+    httpd = HTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(routes_body, stops_body, stop_template, http_status, strict_stop_id=strict_stop_id, requested_ids=requested_ids),
+    )
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -187,8 +210,20 @@ def stop_server(httpd):
     httpd.server_close()
 
 
-def render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=None, app_config=None):
-    httpd, port = start_server(routes_body, stops_body, stop_template, http_status=http_status)
+def render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=None, app_config=None, requested_stop_ids=None):
+    # Strict stop-id matching activates only when real app_config is being
+    # exercised for THIS render. run_one_failure_case's 'assert_matches_stop'
+    # oracle render deliberately passes no app_config, so it stays
+    # permissive and always answers with its own fixture body regardless of
+    # which (config-independent, always-default) id gets requested -- that
+    # is what makes it a valid ground truth to compare the real render
+    # against, rather than something that could pass or fail in lockstep
+    # with the same bug.
+    strict_stop_id = bool(app_config)
+    httpd, port = start_server(
+        routes_body, stops_body, stop_template,
+        http_status=http_status, strict_stop_id=strict_stop_id, requested_ids=requested_stop_ids,
+    )
     try:
         patched = read_patched_star(port)
         return render_source(patched, out_path, app_config=app_config)
@@ -231,7 +266,11 @@ def run_one_failure_case(case_path, default_routes, default_stops):
 
     with tempfile.TemporaryDirectory() as td:
         out_path = Path(td) / "frame.webp"
-        result = render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=http_status, app_config=app_config)
+        requested_stop_ids = []
+        result = render_via_mock(
+            routes_body, stops_body, stop_template, out_path,
+            http_status=http_status, app_config=app_config, requested_stop_ids=requested_stop_ids,
+        )
         if result.returncode != 0:
             return False, (
                 f"{name}: FAIL -- pixlet render crashed (exit {result.returncode})\n"
@@ -257,7 +296,8 @@ def run_one_failure_case(case_path, default_routes, default_stops):
             if fail2:
                 return False, (
                     f"{name}: FAIL -- did not render the expected trip "
-                    f"(pixel diff vs the equivalent single-trip render)\n{report2}"
+                    f"(pixel diff vs the equivalent single-trip render)\n"
+                    f"requested stop id(s): {requested_stop_ids}\n{report2}"
                 )
 
         # 'assert_matches_reference': true -- a stronger check than the

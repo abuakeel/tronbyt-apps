@@ -1,7 +1,10 @@
 {
-  "_note": "An empty string 'value'. An empty string must not become the stop ID -- get_settings must treat it the same as missing and fall back to DEFAULT_STOP_ID.",
+  "_note": "An empty string 'value'. An empty string must not become the stop ID -- get_settings must treat it the same as missing and fall back to DEFAULT_STOP_ID. This is the one config-* case where a plausible bug (dropping the 'and value' truthiness guard) does NOT crash: stop_id becomes '', the fetch URL collapses to exactly the /stops/ LISTING endpoint (not the per-stop one), and both directions silently degrade to 'no trains' -- a real, user-visible regression the divider-only check can't see. assert_matches_stop (a config-independent oracle, see gate.py) requires the real G35 trip content, which a silent 'no trains' degrade fails to reproduce.",
   "config": {"station": "{\"display\":\"Somewhere\",\"value\":\"\"}"},
   "stop": {"id": "G35", "upcoming_trips": {
+    "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
+    "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}},
+  "assert_matches_stop": {"id": "G35", "upcoming_trips": {
     "north": [{"route_id": "G", "destination_stop": "F27", "arrival_offset": 30}],
     "south": [{"route_id": "G", "destination_stop": "G21", "arrival_offset": 30}]}}
 }
