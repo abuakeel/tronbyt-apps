@@ -2,6 +2,7 @@ load("render.star", "render")
 load("http.star", "http")
 load("time.star", "time")
 load("encoding/json.star", "json")
+load("schema.star", "schema")
 
 # --- fonts: measured against the reference in tools/fontprobe.py (Task 2) ---
 # Dina_r400-6: 27.9% glyph mismatch on destination text (best-fit alignment,
@@ -106,6 +107,60 @@ ROUTES_URL = "https://api.subwaynow.app/routes/"
 DEFAULT_STOP_ID = "G35"  # Clinton - Washington Avs (G)
 DEFAULT_STATION_JSON = '{"display": "Clinton - Washington Avs (G)", "value": "G35"}'
 DEFAULT_DIRECTIONS = ["north", "south"]
+
+MAX_SEARCH_RESULTS = 20
+
+def station_label(stop):
+    """'<name> (<routes>)', e.g. 'Clinton - Washington Avs (G)'.
+
+    Route letters are NOT decoration: 75 of the API's 496 stop names are shared
+    by two or more stops ('7 Av' is three different stations), so a name-only
+    label is ambiguous. Stops with no routes fall back to the stop id for the
+    same reason.
+    """
+    routes = stop.get("routes")
+    if type(routes) == "dict" and len(routes) > 0:
+        return stop["name"] + " (" + "".join(sorted(routes.keys())) + ")"
+    return stop["name"] + " [" + stop["id"] + "]"
+
+def search_stations(pattern):
+    """Typeahead handler. Returns at most MAX_SEARCH_RESULTS options.
+
+    Must never raise -- a failed fetch yields an empty result list, which the
+    picker shows as 'no matches'.
+    """
+    data = fetch_json(STOPS_URL, 86400)
+    if data == None:
+        return []
+
+    needle = pattern.lower()
+    out = []
+    for stop in data.get("stops", []):
+        if type(stop) != "dict":
+            continue
+        name = stop.get("name")
+        stop_id = stop.get("id")
+        if type(name) != "string" or type(stop_id) != "string":
+            continue
+        if needle in name.lower():
+            out.append(schema.Option(display = station_label(stop), value = stop_id))
+            if len(out) >= MAX_SEARCH_RESULTS:
+                break
+    return out
+
+def get_schema():
+    return schema.Schema(
+        version = "1",
+        fields = [
+            schema.Typeahead(
+                id = "station",
+                name = "Station",
+                desc = "Subway station to show arrivals for.",
+                icon = "train",
+                handler = search_stations,
+            ),
+        ],
+    )
 
 def get_settings(config):
     """The ONE place station config is read. Adding fields here is contained;

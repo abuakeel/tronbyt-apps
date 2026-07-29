@@ -63,6 +63,12 @@ python3 tools/gate.py --refresh-fixture   # re-fetch the three live endpoints an
                                            # SETS (not values) against the pinned fixture, so
                                            # an API shape change is caught even though no
                                            # other mode exercises the live shape directly
+
+python3 tools/gate.py --handler        # assert search_stations() labelling via a probe app --
+                                        # the handler isn't reachable through `pixlet render`
+                                        # directly, so this renders a probe that appends its
+                                        # own main() calling the handler and printing results
+                                        # (Starlark print() reaches stdout as "[<app>.star] <line>")
 ```
 
 ## Pixlet version matters

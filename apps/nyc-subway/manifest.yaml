@@ -5,6 +5,10 @@ summary: Real-time subway departures
 desc: >-
   Recreation of Tidbyt's closed-source first-party NYC Subway app. Shows the next
   train in each direction at one station, with the official MTA route bullet.
+  Station-configurable via a typeahead picker in the app's config UI (search by
+  station name; results are labelled with their route letters since many station
+  names are shared by more than one stop) -- install the app more than once, one
+  per station, to show several stations in rotation.
   NOTE: the tronbyt server IGNORES this file for user-repo apps -- metadata comes
   from the directory name. Kept for documentation only.
   Failure behaviour: an HTTP-level feed failure (4xx/5xx from api.subwaynow.app)

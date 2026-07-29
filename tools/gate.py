@@ -101,20 +101,24 @@ def read_patched_star(port):
     return src.replace(LIVE_HOST, f"http://127.0.0.1:{port}/")
 
 
-def render_source(src, out_path, timeout=30, app_config=None):
+def render_source_path(star_path, out_path, timeout=30, app_config=None):
     pixlet = find_pixlet()
+    cmd = [pixlet, "render", str(star_path), "-o", str(out_path)]
+    if app_config:
+        cmd += [f"{k}={v}" for k, v in app_config.items()]
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def render_source(src, out_path, timeout=30, app_config=None):
     with tempfile.TemporaryDirectory() as td:
         star_path = Path(td) / "nyc-subway.star"
         star_path.write_text(src)
-        cmd = [pixlet, "render", str(star_path), "-o", str(out_path)]
-        if app_config:
-            cmd += [f"{k}={v}" for k, v in app_config.items()]
-        return subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        return render_source_path(star_path, out_path, timeout=timeout, app_config=app_config)
 
 
 # --- mock server -------------------------------------------------------
@@ -318,6 +322,110 @@ def run_one_failure_case(case_path, default_routes, default_stops):
         return True, f"{name}: OK"
 
 
+def read_patched_star_source():
+    """URL-patched app source with its own main() stripped off.
+
+    The probe appends its own main(); leaving the real one in place would mean
+    two definitions, and the last one silently wins. Stripping is explicit.
+    """
+    src = APP_SRC.read_text()
+    if src.count(LIVE_HOST) != EXPECTED_LIVE_HOST_COUNT:
+        raise SystemExit(
+            f"expected exactly {EXPECTED_LIVE_HOST_COUNT} occurrences of "
+            f"{LIVE_HOST} in {APP_SRC}, found {src.count(LIVE_HOST)} -- "
+            f"refusing to patch"
+        )
+    marker = "\ndef main(config):"
+    idx = src.find(marker)
+    if idx == -1:
+        raise SystemExit(f"no 'def main(config):' found in {APP_SRC}")
+    return src[:idx]
+
+
+def run_probe(src_without_main, stops_body):
+    """Render a probe app against the mock and return its print() lines.
+
+    Starlark print() reaches stdout as '[<app>.star] <line>'; the prefix is
+    stripped so callers compare against plain strings.
+    """
+    httpd, port = start_server({"routes": {}}, stops_body, None)
+    try:
+        patched = src_without_main.replace(LIVE_HOST, f"http://127.0.0.1:{port}/")
+        with tempfile.TemporaryDirectory() as td:
+            star_path = Path(td) / "probe.star"
+            star_path.write_text(patched)
+            out_path = Path(td) / "probe.webp"
+            result = render_source_path(star_path, out_path)
+            lines = []
+            for line in result.stdout.splitlines():
+                if line.startswith("[") and "] " in line:
+                    lines.append(line.split("] ", 1)[1])
+            return lines
+    finally:
+        stop_server(httpd)
+
+
+def cmd_handler():
+    """Assert search_stations() labelling via a probe app that prints results.
+
+    The handler cannot be invoked through `pixlet render` directly, so the probe
+    appends a main() that calls it and prints one line per option. Starlark
+    print() reaches stdout prefixed with "[<app>.star] ".
+    """
+    fixture = load_json(REFERENCE_FIXTURE)
+    stops_body = {"stops": [
+        {"id": "G35", "name": "Clinton - Washington Avs", "routes": {"G": ["north", "south"]}},
+        {"id": "A44", "name": "Clinton - Washington Avs", "routes": {"A": ["north", "south"]}},
+        {"id": "X01", "name": "Routeless Test Stop"},
+    ]}
+    checks = [
+        ("clinton", ["Clinton - Washington Avs (A)|A44",
+                     "Clinton - Washington Avs (G)|G35"]),
+        ("routeless", ["Routeless Test Stop [X01]|X01"]),
+        ("zzzznomatch", []),
+    ]
+    failures = []
+    for pattern, expected in checks:
+        src = read_patched_star_source()
+        src += (
+            "\n\ndef main(config):\n"
+            f"    for o in search_stations(\"{pattern}\"):\n"
+            "        print(o.display + \"|\" + o.value)\n"
+            "    return render.Root(child = render.Box(color = \"#000000\"))\n"
+        )
+        got = run_probe(src, stops_body)
+        if sorted(got) != sorted(expected):
+            failures.append(f"  {pattern!r}: expected {expected}, got {got}")
+
+    # Feed down: the handler must return [] and MUST NOT raise. A raising
+    # handler would break the config UI itself, not just the render, and
+    # Starlark has no try/except for the caller to fall back on.
+    src = read_patched_star_source()
+    src += (
+        "\n\ndef main(config):\n"
+        "    print(\"n=\" + str(len(search_stations(\"clinton\"))))\n"
+        "    return render.Root(child = render.Box(color = \"#000000\"))\n"
+    )
+    httpd, port = start_server({"routes": {}}, stops_body, None, http_status=503)
+    try:
+        patched = src.replace(LIVE_HOST, f"http://127.0.0.1:{port}/")
+        with tempfile.TemporaryDirectory() as td:
+            sp = Path(td) / "probe.star"
+            sp.write_text(patched)
+            res = render_source_path(sp, Path(td) / "p.webp")
+            if res.returncode != 0:
+                failures.append("  feed-down: handler CRASHED (must return [] instead)")
+            elif "n=0" not in res.stdout:
+                failures.append(f"  feed-down: expected n=0, got {res.stdout.strip()!r}")
+    finally:
+        stop_server(httpd)
+
+    for line in failures:
+        print(line)
+    print("handler: OK" if not failures else "handler: FAIL")
+    return 1 if failures else 0
+
+
 def cmd_failures():
     fixture = load_json(REFERENCE_FIXTURE)
     default_routes = fixture["routes"]
@@ -487,10 +595,13 @@ def main():
     group.add_argument("--failures", action="store_true", help="run tools/fixtures/failures/*.json")
     group.add_argument("--live", action="store_true", help="informational check against the real API")
     group.add_argument("--refresh-fixture", action="store_true", help="diff live API key shape vs the fixture")
+    group.add_argument("--handler", action="store_true", help="probe search_stations() via a print()-based harness")
     args = parser.parse_args()
 
     if args.refresh_fixture:
         sys.exit(cmd_refresh_fixture())
+    elif args.handler:
+        sys.exit(cmd_handler())
     elif args.failures:
         sys.exit(cmd_failures())
     elif args.live:
