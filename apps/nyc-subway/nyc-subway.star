@@ -59,6 +59,62 @@ DEST_HEIGHT = 9
 # gap here) lands its glyph exactly on the reference's arrival row.
 ARRIVAL_TOP = 7
 
+# --- route bullet forms ---------------------------------------------------
+# The API returns 29 route ids, six of which are multi-character and will not
+# fit an 11px bullet: 6X 7X FX (express) and FS GS SI. The other 23 are single
+# characters and MUST keep rendering exactly as they do today -- that is what
+# holds tools/gate.py at 0/2048.
+#
+# Express services get a DIAMOND, matching MTA signage: the disc becomes the
+# diamond, it is not a circle containing one.
+EXPRESS_SUFFIX = "X"
+SHUTTLE_IDS = ["FS", "GS", "SI"]
+
+# Express letters need a SMALLER font than local ones. Dina_r400-6 is
+# unreadable inside an 11px diamond -- the taper clips the glyph to mush.
+# Measured by rendering, not chosen by preference.
+FONT_BULLET_EXPRESS = "tom-thumb"
+
+def bullet_form(route_id):
+    """Classify a route id -> (form, letter, font).
+
+    form is "circle" or "diamond". Single-character ids are returned unchanged
+    with the local font, so their rendering is bit-for-bit what it was before
+    this function existed.
+    """
+    if len(route_id) == 1:
+        return ("circle", route_id, FONT_DEST)
+    if route_id in SHUTTLE_IDS:
+        # Franklin Ave / Grand St shuttles are both signed "S". SI (Staten
+        # Island Railway) also collapses to "S" -- its real bullet reads "SIR",
+        # which overflows an 11px circle. SIR has no transfer to the subway, so
+        # it cannot appear at a station this display serves. Recorded in the
+        # design doc as a known limitation, not solved.
+        return ("circle", "S", FONT_DEST)
+    if route_id.endswith(EXPRESS_SUFFIX):
+        return ("diamond", route_id[:-1], FONT_BULLET_EXPRESS)
+    # Unknown multi-character id (a new route, or a shape not seen today):
+    # truncate rather than overflow. A slightly wrong bullet beats a corrupted row.
+    return ("circle", route_id[0], FONT_DEST)
+
+def diamond(size, color):
+    """Filled diamond from centred Box rows, so it takes any route colour.
+
+    render.Image has no tint parameter (render/image.go:38-45), so an embedded
+    PNG could not be recoloured per route -- and route colours come from the
+    API across 29 routes.
+    """
+    half = size // 2
+    rows = []
+    for y in range(size):
+        w = size - 2 * abs(y - half)
+        rows.append(render.Box(
+            width = size,
+            height = 1,
+            child = render.Box(width = w, height = 1, color = color),
+        ))
+    return render.Column(children = rows)
+
 def render_row(route_id, route_color, destination, arrival_text):
     """One train: bullet, marquee destination, arrival line."""
     if route_id == "":
@@ -68,14 +124,24 @@ def render_row(route_id, route_color, destination, arrival_text):
         # used here instead of a second hardcoded literal.
         bullet = render.Circle(diameter = BULLET_DIAMETER, color = route_color)
     else:
-        bullet = render.Circle(
-            diameter = BULLET_DIAMETER,
-            color = route_color,
-            child = render.Padding(
-                pad = (0, 0, 0, 2),
-                child = render.Text(route_id, font = FONT_DEST, color = COLOR_BULLET_TEXT),
-            ),
-        )
+        form, letter, font = bullet_form(route_id)
+        if form == "diamond":
+            bullet = render.Stack(children = [
+                diamond(BULLET_DIAMETER, route_color),
+                render.Padding(
+                    pad = (4, 3, 0, 0),
+                    child = render.Text(letter, font = font, color = COLOR_BULLET_TEXT),
+                ),
+            ])
+        else:
+            bullet = render.Circle(
+                diameter = BULLET_DIAMETER,
+                color = route_color,
+                child = render.Padding(
+                    pad = (0, 0, 0, 2),
+                    child = render.Text(letter, font = font, color = COLOR_BULLET_TEXT),
+                ),
+            )
     text_col = render.Stack(
         children = [
             render.Box(
