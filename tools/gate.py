@@ -49,6 +49,10 @@ Modes:
                        labelling, case-insensitivity, the MAX_SEARCH_RESULTS
                        cap against a synthetic over-cap fixture, and
                        must-never-raise on a fetch failure.
+  --bullets           probe bullet_form() via a print()-based harness: asserts
+                       route-id -> (form, letter) for the six multi-character
+                       ids, representative single-character ones, and an
+                       unknown-id fallback. Deterministic, no live data.
 """
 import argparse
 import copy
@@ -647,6 +651,50 @@ def check_live_duplicate_labels(failures):
         )
 
 
+def cmd_bullets():
+    """Assert route-id -> bullet form classification, deterministically.
+
+    bullet_form() is pure, so the probe calls it directly and prints one line
+    per case. No live data: a guard that depends on which trains happen to be
+    running is not a guard.
+    """
+    cases = [
+        ("6X", "diamond|6"),
+        ("7X", "diamond|7"),
+        ("FX", "diamond|F"),
+        ("FS", "circle|S"),
+        ("GS", "circle|S"),
+        ("SI", "circle|S"),
+        ("G", "circle|G"),
+        ("A", "circle|A"),
+        ("6", "circle|6"),
+        ("ZZ", "circle|Z"),
+    ]
+    src = read_patched_star_source()
+    src += "\n\ndef main(config):\n"
+    for route_id, _ in cases:
+        src += (
+            '    f, l, _ = bullet_form("%s")\n' % route_id
+            + '    print("%s=" + f + "|" + l)\n' % route_id
+        )
+    src += '    print("PROBE-DONE")\n'
+    src += '    return render.Root(child = render.Box(color = "#000000"))\n'
+
+    got = run_probe(src, {"stops": []})
+    seen = dict(line.split("=", 1) for line in got if "=" in line)
+
+    failures = []
+    for route_id, expected in cases:
+        actual = seen.get(route_id)
+        if actual != expected:
+            failures.append("  %s: expected %r, got %r" % (route_id, expected, actual))
+
+    for line in failures:
+        print(line)
+    print("bullets: OK" if not failures else "bullets: FAIL")
+    return 1 if failures else 0
+
+
 def cmd_failures():
     fixture = load_json(REFERENCE_FIXTURE)
     default_routes = fixture["routes"]
@@ -817,12 +865,15 @@ def main():
     group.add_argument("--live", action="store_true", help="informational check against the real API")
     group.add_argument("--refresh-fixture", action="store_true", help="diff live API key shape vs the fixture")
     group.add_argument("--handler", action="store_true", help="probe search_stations() via a print()-based harness")
+    group.add_argument("--bullets", action="store_true", help="probe bullet_form() via a print()-based harness")
     args = parser.parse_args()
 
     if args.refresh_fixture:
         sys.exit(cmd_refresh_fixture())
     elif args.handler:
         sys.exit(cmd_handler())
+    elif args.bullets:
+        sys.exit(cmd_bullets())
     elif args.failures:
         sys.exit(cmd_failures())
     elif args.live:

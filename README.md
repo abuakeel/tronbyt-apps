@@ -69,6 +69,14 @@ python3 tools/gate.py --handler        # assert search_stations() labelling via 
                                         # directly, so this renders a probe that appends its
                                         # own main() calling the handler and printing results
                                         # (Starlark print() reaches stdout as "[<app>.star] <line>")
+
+python3 tools/gate.py --bullets        # assert bullet_form() route-id -> (form, letter)
+                                        # classification via the same print()-based probe:
+                                        # the six multi-character ids (6X 7X FX express,
+                                        # FS GS SI shuttle), representative single-character
+                                        # ids, and an unknown-id fallback. Deterministic, no
+                                        # live data -- a guard that depends on which trains
+                                        # happen to be running is not a guard
 ```
 
 ## Pixlet version matters
