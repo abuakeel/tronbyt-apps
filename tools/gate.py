@@ -529,11 +529,74 @@ def cmd_handler():
         stop_server(httpd)
 
     check_live_duplicate_labels(failures)
+    check_field_preference_order(failures)
 
     for line in failures:
         print(line)
     print("handler: OK" if not failures else "handler: FAIL")
     return 1 if failures else 0
+
+
+def check_field_preference_order(failures):
+    """Deterministic synthetic guard pinning station_label's field-preference
+    order: scheduled_routes, then routes, then the bare [id] fallback.
+
+    check_live_duplicate_labels above is real-world but non-deterministic --
+    it re-derives its expectation (zero duplicates) from whatever the live
+    API happens to be serving RIGHT NOW, so a `for key in ("routes",):`
+    regression can pass it whenever the colliding stops' currently-running
+    service happens not to overlap, and it structurally cannot see the
+    routeless-fallback half of the bug at all (two different stops both
+    falling back to `name [id]` are never *duplicates* of each other). This
+    check instead pins the three cases directly against synthetic stops
+    served through the mock, so the expectation never depends on time of day
+    or live service state:
+
+      1. scheduled_routes AND routes present and DIFFERENT -> label uses
+         scheduled_routes. The two route letters are chosen so a
+         routes-only implementation produces a visibly different, wrong
+         label ('(Q)' instead of '(Z)') -- this is the one that catches the
+         regression.
+      2. Only routes present -> label falls back to routes.
+      3. Neither present -> label falls back to the bare '[id]' form.
+    """
+    stops_body = {"stops": [
+        {"id": "PREF1", "name": "Preference Stop", "scheduled_routes": {"Z": ["north"]}, "routes": {"Q": ["north"]}},
+        {"id": "PREF2", "name": "Fallback Stop", "routes": {"R": ["north"]}},
+        {"id": "PREF3", "name": "Bare Stop"},
+    ]}
+    expected = {
+        "PREF1": "Preference Stop (Z)",
+        "PREF2": "Fallback Stop (R)",
+        "PREF3": "Bare Stop [PREF3]",
+    }
+    src = read_patched_star_source()
+    src += (
+        "\n\ndef main(config):\n"
+        "    data = fetch_json(STOPS_URL, 86400)\n"
+        "    for s in (data.get(\"stops\") or []):\n"
+        "        print(s[\"id\"] + \"=\" + station_label(s))\n"
+        "    print(\"PROBE-DONE\")\n"
+        "    return render.Root(child = render.Box(color = \"#000000\"))\n"
+    )
+    try:
+        lines = run_probe(src, stops_body)
+    except RuntimeError as e:
+        failures.append(f"  field-preference-order: {e}")
+        return
+
+    got = {}
+    for line in lines:
+        stop_id, _, label = line.partition("=")
+        got[stop_id] = label
+
+    for stop_id, want in expected.items():
+        have = got.get(stop_id)
+        if have != want:
+            failures.append(
+                f"  field-preference-order: stop {stop_id!r} expected label "
+                f"{want!r}, got {have!r}"
+            )
 
 
 def check_live_duplicate_labels(failures):
