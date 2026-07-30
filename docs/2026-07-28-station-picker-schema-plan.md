@@ -1,5 +1,36 @@
 # Station Picker Schema — Implementation Plan
 
+> **STATUS: EXECUTED / SUPERSEDED (2026-07-29).** This plan shipped across commits `45623e7`
+> (Task 1), `fc1b247` (Task 2), and `917d082` (a subsequent hardening commit) on branch `testing`.
+> It is kept as a historical record of what was proposed and built, NOT as a live spec -- a final
+> whole-branch review before hardware shipment found several things below don't match (or never
+> matched) the shipped code, and this note is deliberately NOT rewriting the steps to pretend
+> otherwise:
+>
+> - **Task 2 Step 3's `station_label` joins route keys with `"".join(...)`** below -- e.g.
+>   `"(DNR)"`. That shipped initially, but a final review found it unreadable (can't tell `"DNR"`
+>   apart into route letters) and, separately, sourced from the wrong field (see next point). The
+>   shipped `station_label` uses `"/".join(...)` on `scheduled_routes` (falling back to `routes`,
+>   then `[id]`) -- e.g. `"(D/N/R)"`. See `docs/2026-07-28-station-picker-schema-design.md`'s
+>   "What the data says" correction for why `routes` (used below) was wrong on its own terms: live
+>   sampling found real duplicate labels between different stations.
+> - **Task 1 Step 3 ("expect the four new cases to FAIL") is self-contradictory with its own next
+>   sentence**, which says the cases pass *vacuously* at that stage -- i.e. the gate reports OK,
+>   not FAIL. Read "FAIL" there as "this doesn't prove anything yet", not literally a red gate.
+> - **Task 2 Step 1's `read_patched_star_source` docstring below says "the last one silently
+>   wins"** if `main()` isn't stripped. That's wrong for Starlark: redefining a global raises
+>   `"cannot reassign global main"` -- fatal, not a silent overwrite. The shipped docstring in
+>   `tools/gate.py` says so correctly.
+> - **The backward-compatibility claim this plan's Task 1 Step 5 makes** ("The default gate
+>   passing proves backward compatibility") turned out to be incomplete: the default gate only
+>   proved the render didn't crash with no config, not that the app actually requested the correct
+>   (default) stop id from the API -- a mock-server permissiveness gap a final review caught and
+>   fixed. See the final-review fix report referenced below.
+>
+> For current, accurate behavior read `apps/nyc-subway/nyc-subway.star` and `tools/gate.py`
+> directly, the (corrected) design doc, and
+> `.superpowers/sdd/2026-07-28-station-picker-schema-plan/final-review-fix-report.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a typeahead station picker so `nyc-subway` can be installed twice on one device — one instance per station — and rotate between them.

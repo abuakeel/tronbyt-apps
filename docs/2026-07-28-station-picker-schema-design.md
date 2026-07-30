@@ -34,31 +34,42 @@ Measured against `api.subwaynow.app/stops/` on 2026-07-28:
 |---|---|---|
 | Total stops | **496** | Needs search, not a dropdown |
 | Names shared by 2+ stops | **75** | **Route labels are required, not cosmetic** |
-| `"clinton"` | 2 hits: `(A)`, `(G)` | The two target stations, correctly disambiguated |
+| `"clinton"` | 2 hits: `(A/C)`, `(G)` | The two target stations, correctly disambiguated |
 | `"a"` | **303 hits** | Needs a result cap |
-| Stops with no `routes` | at least one (`14 St`) | A name-only label collides with two other `14 St` stops |
+| Stops with no *currently running* `routes` | **~20**, varies hour to hour (e.g. the whole IRT 1/2/3 Manhattan trunk at some hours) | Motivated sourcing the label from `scheduled_routes` instead -- see the correction below |
 
 The label format matches the original Tidbyt app's: station name, then the lines in parentheses.
-Verified against live data:
+Multiple simultaneous routes are joined with `/`, sorted, e.g. `(A/C)`, `(D/N/R)`. Verified against
+live data:
 
 ```
-Atlantic Av (L)                    -> L24
-Atlantic Av - Barclays Ctr (DNR)   -> R31
-Atlantic Av - Barclays Ctr (Q)     -> D24
-Atlantic Av - Barclays Ctr (45)    -> 235
-Clinton - Washington Avs (A)       -> A44
-Clinton - Washington Avs (G)       -> G35
+Atlantic Av (L)                     -> L24
+Atlantic Av - Barclays Ctr (D/N/R)  -> R31
+Atlantic Av - Barclays Ctr (Q)      -> D24
+Atlantic Av - Barclays Ctr (2/3/4)  -> 235
+Clinton - Washington Avs (A/C)      -> A44
+Clinton - Washington Avs (G)        -> G35
 ```
 
 > Note the API models each platform complex as its own stop, so Atlantic Av - Barclays Ctr appears
 > as **three** entries rather than the two a rider might expect. This is the upstream data's
 > grouping, not a labelling choice, and the parenthesised routes keep them unambiguous.
 
-> **The `(A)` / `(G)` route letters above are a snapshot, not a permanent label.** They reflect
-> whatever service is currently running: `A44` shows `(C)` in the afternoon and `(A)` overnight,
-> once the C stops running. Harmless for the picker -- only the bare stop id (`value`) is read
-> back by `get_settings()`, never the display label -- but don't treat this table as a fixed
-> mapping from stop id to route letter.
+> **Correction (final whole-branch review, 2026-07-29): route letters are sourced from
+> `scheduled_routes`, not `routes`.** The original plan below assumed `routes` (whatever service
+> is running *right now*) was an acceptable source because only the bare stop id is ever persisted
+> -- a snapshot label was assumed harmless. That assumption was wrong on its own terms: sampled 5x
+> and stable, `routes` produces genuine duplicate labels between DIFFERENT stations --
+> `Gun Hill Rd (2)` for both stop 208 (White Plains Rd) and stop 503 (Seymour Av), and
+> `Pelham Pkwy (2)` for both stop 211 (White Plains Rd) and stop 504 (Esplanade) -- and leaves
+> ~20 stops with no route label at all at any given hour (the routeless `[id]` fallback firing for
+> stops that DO have a real name collision, e.g. one of the three `14 St` stops showing a bare
+> `14 St [132]`). `scheduled_routes` doesn't have either problem: verified against all 496 live
+> stops, it produces **zero** duplicate labels, is populated everywhere `routes` was empty, and is
+> stable across the day. `station_label` now tries `scheduled_routes` first, falls back to
+> `routes` only if that's ever absent/empty, and falls back to the bare `[id]` form last. Still
+> true regardless of source: only the bare stop id (`value`) is read back by `get_settings()`,
+> never the display label.
 
 ## How pixlet typeahead works
 
@@ -101,7 +112,9 @@ def get_schema():
 - Case-insensitive substring match on the stop name.
 - Returns **at most 20** options. `"a"` truncates silently; acceptable because the user types a
   station name (decided 2026-07-28).
-- Label: `"<name> (<routes>)"` with route keys sorted for stability.
+- Label: `"<name> (<routes>)"`, route keys `/`-joined and sorted for stability, sourced from
+  `scheduled_routes` (falling back to `routes`, then the bare id) -- see the correction in
+  "What the data says" above.
 - **Routeless stops fall back to `"<name> [<stop_id>]"`** so they stay distinguishable from
   same-named neighbours.
 - Value: the bare stop ID (`"G35"`).
@@ -177,8 +190,15 @@ New coverage:
 - **Malformed config:** not JSON, not a dict, missing `value`, `value: ""` — each renders
   successfully at the `G35` default rather than crashing.
 - **Handler with feed down:** `search_stations` returns `[]` and does not raise.
-- **Handler labelling:** `"clinton"` returns exactly 2 options with distinct `(A)` / `(G)` labels;
-  a routeless stop yields the `[stop_id]` fallback; `"a"` returns exactly 20.
+- **Handler labelling:** `"clinton"` returns exactly 2 options with distinct `(A/C)` / `(G)`
+  labels; a routeless stop yields the `[stop_id]` fallback; the 20-result cap is proven with a
+  **synthetic 25-stop fixture** (not literally `"a"` against live data — the shipped offline gate
+  never calls the real API, so it can't depend on live search hit counts staying at 303).
+- **Handler against LIVE data (final review, added 2026-07-29):** `--handler` additionally fetches
+  the real `/stops/` list once and asserts `station_label` produces **zero duplicate labels**
+  across all 496 real stops — the guard that would have caught the `routes`-vs-`scheduled_routes`
+  bug above before shipment, since nothing else in the offline gate exercises station data at
+  real-world scale.
 
 ## Non-goals
 

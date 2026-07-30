@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate for the NYC Subway recreation (Task 5 review fix).
+"""Gate for the NYC Subway recreation.
 
 Governing principle: NO fixture mode inside nyc-subway.star's main(). Any
 `if config.bool("fixture")` branch would be a code path that exists only for
@@ -16,10 +16,16 @@ never *what code runs*:
      127.0.0.1:<ephemeral port>, write the result to a tempfile, and render
      THAT with the real `pixlet` binary.
 
-Every downstream line of nyc-subway.star -- fetch_json, route_colors,
-stop_names, fetch_trips, render_row, render_app, main -- runs completely
-unmodified. A broken app cannot pass by special-casing a fixture flag,
-because there is no such flag to special-case.
+For the render-based modes (default, --failures, --live), every downstream
+line of nyc-subway.star -- fetch_json, route_colors, stop_names, fetch_trips,
+render_row, render_app, main -- runs completely unmodified. A broken app
+cannot pass by special-casing a fixture flag, because there is no such flag
+to special-case. (--handler is the exception: it strips the real main() and
+substitutes a probe main() so search_stations()/station_label() can be
+invoked and their output printed -- see cmd_handler and
+read_patched_star_source below. Everything the probe calls into --
+fetch_json, station_label, search_stations -- still runs unmodified; only
+main() itself is swapped.)
 
 Modes:
   (default)           render the reference fixture, require the WHOLE 64x32
@@ -149,7 +155,7 @@ def resolve_stop_body(template):
     return body
 
 
-def make_handler(routes_body, stops_body, stop_template, http_status, strict_stop_id=False, requested_ids=None):
+def make_handler(routes_body, stops_body, stop_template, http_status, strict_stop_id=False, requested_ids=None, stop_raw_body=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -186,6 +192,25 @@ def make_handler(routes_body, stops_body, stop_template, http_status, strict_sto
                     self.send_response(404)
                     self.end_headers()
                     return
+
+                if stop_raw_body is not None:
+                    # Escape hatch (final review, IMPORTANT 4): serves a
+                    # LITERAL non-JSON body with a 200 status, e.g. the
+                    # HTML interstitial a captive-portal proxy might return.
+                    # make_handler otherwise always json.dumps()'s its body,
+                    # so no fixture could previously express the realistic
+                    # "200 but not JSON" case that motivated fetch_json's
+                    # two-argument json.decode in the first place -- reverting
+                    # that to resp.json() is FATAL on exactly this body, and
+                    # nothing here could catch the regression.
+                    data = stop_raw_body.encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+
                 body = resolve_stop_body(stop_template)
             else:
                 self.send_response(404)
@@ -202,10 +227,13 @@ def make_handler(routes_body, stops_body, stop_template, http_status, strict_sto
     return Handler
 
 
-def start_server(routes_body, stops_body, stop_template, http_status=None, strict_stop_id=False, requested_ids=None):
+def start_server(routes_body, stops_body, stop_template, http_status=None, strict_stop_id=False, requested_ids=None, stop_raw_body=None):
     httpd = HTTPServer(
         ("127.0.0.1", 0),
-        make_handler(routes_body, stops_body, stop_template, http_status, strict_stop_id=strict_stop_id, requested_ids=requested_ids),
+        make_handler(
+            routes_body, stops_body, stop_template, http_status,
+            strict_stop_id=strict_stop_id, requested_ids=requested_ids, stop_raw_body=stop_raw_body,
+        ),
     )
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -218,7 +246,7 @@ def stop_server(httpd):
     httpd.server_close()
 
 
-def render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=None, app_config=None, requested_stop_ids=None):
+def render_via_mock(routes_body, stops_body, stop_template, out_path, http_status=None, app_config=None, requested_stop_ids=None, stop_raw_body=None):
     # Strict stop-id matching activates only when real app_config is being
     # exercised for THIS render. run_one_failure_case's 'assert_matches_stop'
     # oracle render deliberately passes no app_config, so it stays
@@ -227,10 +255,15 @@ def render_via_mock(routes_body, stops_body, stop_template, out_path, http_statu
     # is what makes it a valid ground truth to compare the real render
     # against, rather than something that could pass or fail in lockstep
     # with the same bug.
-    strict_stop_id = bool(app_config)
+    # `is not None`, NOT `bool(app_config)` (final review, M9): a fixture
+    # whose config is legitimately `{}` is falsy but is still real
+    # app_config being exercised -- `bool({})` would silently degrade that
+    # case back to permissive matching.
+    strict_stop_id = app_config is not None
     httpd, port = start_server(
         routes_body, stops_body, stop_template,
         http_status=http_status, strict_stop_id=strict_stop_id, requested_ids=requested_stop_ids,
+        stop_raw_body=stop_raw_body,
     )
     try:
         patched = read_patched_star(port)
@@ -246,11 +279,34 @@ def cmd_default():
     fixture = load_json(REFERENCE_FIXTURE)
     with tempfile.TemporaryDirectory() as td:
         out_path = Path(td) / "frame.webp"
-        result = render_via_mock(fixture["routes"], fixture["stops"], fixture["stop"], out_path)
+        # No app_config is passed here on purpose -- this is the "app was
+        # never configured" production path, and it must resolve to
+        # DEFAULT_STOP_ID via DEFAULT_STATION_JSON. requested_stop_ids
+        # records what the app actually asked the mock for (final review,
+        # IMPORTANT 1): without this, render_via_mock's mock server answers
+        # /stops/<ANYTHING> with the same fixture body regardless of which id
+        # was requested (strict_stop_id is only active when app_config is
+        # passed), so a whole-frame pixel match alone can't prove the app
+        # requested the right stop -- it would pass identically even if
+        # DEFAULT_STATION_JSON's "value" silently drifted from G35.
+        requested_stop_ids = []
+        result = render_via_mock(
+            fixture["routes"], fixture["stops"], fixture["stop"], out_path,
+            requested_stop_ids=requested_stop_ids,
+        )
         if result.returncode != 0:
             print(result.stdout)
             print(result.stderr, file=sys.stderr)
             print(f"pixlet render failed against the reference fixture (exit {result.returncode})")
+            return 1
+        expected_id = fixture["stop"]["id"]
+        if requested_stop_ids != [expected_id]:
+            print(
+                f"default gate FAIL -- unconfigured app requested stop id(s) "
+                f"{requested_stop_ids}, expected exactly [{expected_id!r}]. "
+                f"DEFAULT_STATION_JSON no longer drives the no-config production "
+                f"path to the expected stop."
+            )
             return 1
         fail, report = compare_images(str(out_path), str(REFERENCE_PNG), strict_whole_frame=True)
         print(report)
@@ -267,10 +323,11 @@ def run_one_failure_case(case_path, default_routes, default_stops):
     routes_body = case.get("routes", default_routes)
     stops_body = case.get("stops", default_stops)
     stop_template = case.get("stop")
+    stop_raw_body = case.get("stop_raw_body")
     app_config = case.get("config")
 
-    if http_status is None and stop_template is None:
-        return False, f"{name}: FAIL -- fixture has neither 'http_status' nor 'stop'"
+    if http_status is None and stop_template is None and stop_raw_body is None:
+        return False, f"{name}: FAIL -- fixture has none of 'http_status', 'stop', 'stop_raw_body'"
 
     with tempfile.TemporaryDirectory() as td:
         out_path = Path(td) / "frame.webp"
@@ -278,6 +335,7 @@ def run_one_failure_case(case_path, default_routes, default_stops):
         result = render_via_mock(
             routes_body, stops_body, stop_template, out_path,
             http_status=http_status, app_config=app_config, requested_stop_ids=requested_stop_ids,
+            stop_raw_body=stop_raw_body,
         )
         if result.returncode != 0:
             return False, (
@@ -332,7 +390,6 @@ def read_patched_star_source():
     The probe appends its own main(); leaving the real one in place would
     mean two definitions of the global `main`, and Starlark raises "cannot
     reassign global main" rather than letting the last one silently win.
-    Stripping is still required -- just not for that reason.
     """
     src = APP_SRC.read_text()
     if src.count(LIVE_HOST) != EXPECTED_LIVE_HOST_COUNT:
@@ -471,10 +528,60 @@ def cmd_handler():
     finally:
         stop_server(httpd)
 
+    check_live_duplicate_labels(failures)
+
     for line in failures:
         print(line)
     print("handler: OK" if not failures else "handler: FAIL")
     return 1 if failures else 0
+
+
+def check_live_duplicate_labels(failures):
+    """Guard (final review, IMPORTANT 2/3): station_label must not produce
+    duplicate labels against REAL station data.
+
+    Every other check in cmd_handler runs against a tiny (<=25-stop)
+    synthetic fixture -- none of them could ever have caught the bug a human
+    reviewer found by hand-sampling the live API: `routes` (current service)
+    produced duplicate labels between DIFFERENT stations (e.g. two unrelated
+    stops both labelled 'Gun Hill Rd (2)') and left ~20 stops with no label
+    disambiguator at all at any given hour. Nothing here ran the real
+    station_label() against real data, which is exactly why that was
+    invisible until someone looked by hand. This fetches the live /stops/
+    list once, serves it back through the mock (so the app's own
+    fetch_json/STOPS_URL path is exercised unmodified), and asserts zero
+    duplicate display labels across all of it.
+    """
+    try:
+        live_stops = fetch_url(LIVE_HOST + "stops/")
+    except Exception as e:
+        failures.append(f"  live-duplicate-labels: FAIL -- could not fetch live stops: {e}")
+        return
+
+    src = read_patched_star_source()
+    src += (
+        "\n\ndef main(config):\n"
+        "    data = fetch_json(STOPS_URL, 86400)\n"
+        "    for s in (data.get(\"stops\") or []):\n"
+        "        print(station_label(s))\n"
+        "    print(\"PROBE-DONE\")\n"
+        "    return render.Root(child = render.Box(color = \"#000000\"))\n"
+    )
+    try:
+        labels = run_probe(src, live_stops)
+    except RuntimeError as e:
+        failures.append(f"  live-duplicate-labels: {e}")
+        return
+
+    counts = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    dups = sorted(label for label, n in counts.items() if n > 1)
+    if dups:
+        failures.append(
+            f"  live-duplicate-labels: FAIL -- {len(dups)} duplicate label(s) "
+            f"across {len(labels)} live stops, e.g. {dups[:5]}"
+        )
 
 
 def cmd_failures():

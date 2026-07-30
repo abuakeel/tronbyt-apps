@@ -118,14 +118,27 @@ def station_label(stop):
     label is ambiguous. Stops with no routes fall back to the stop id for the
     same reason.
 
-    Route letters reflect CURRENT service, not a permanent label: stop `A44`
-    shows `(C)` in the afternoon and `(A)` overnight, since the C doesn't run
-    then. This is harmless here -- only `value` (the bare stop id) is read
-    back by get_settings(); `display` is never persisted or compared.
+    Sourced from `scheduled_routes`, NOT `routes` (final review, IMPORTANT
+    2/3): `routes` reflects whatever service happens to be running RIGHT NOW,
+    so it is time-varying in two ways that both broke the "route letters
+    disambiguate" premise above -- verified live: (1) it produces genuine
+    duplicate labels between DIFFERENT stations (e.g. 'Gun Hill Rd (2)' for
+    both stop 208 and stop 503), and (2) ~20 stops have no currently-running
+    route at all at any given hour, which fell through to the bare-id
+    fallback below even though those stops DO have a real name collision.
+    `scheduled_routes` is stable across the day and, verified against all 496
+    live stops, produces zero duplicate labels and is populated everywhere
+    `routes` was empty. `routes` remains as a defensive second choice (in
+    case `scheduled_routes` is ever absent for some stop), and the bare `[id]`
+    form is the last resort if neither yields anything.
+
+    Whichever source is used, only `value` (the bare stop id) is read back by
+    get_settings(); `display` is never persisted or compared.
     """
-    routes = stop.get("routes")
-    if type(routes) == "dict" and len(routes) > 0:
-        return stop["name"] + " (" + "/".join(sorted(routes.keys())) + ")"
+    for key in ("scheduled_routes", "routes"):
+        routes = stop.get(key)
+        if type(routes) == "dict" and len(routes) > 0:
+            return stop["name"] + " (" + "/".join(sorted(routes.keys())) + ")"
     return stop["name"] + " [" + stop["id"] + "]"
 
 def search_stations(pattern):
@@ -142,6 +155,11 @@ def search_stations(pattern):
 
     needle = pattern.lower()
     out = []
+
+    # `or []` is redundant with the type check on the next line -- a null
+    # "stops" key already fails `type(stops) != "list"` and returns early on
+    # its own. Kept as a harmless belt-and-suspenders, not because it is what
+    # tolerates a null/missing key (final review, I5).
     stops = data.get("stops", []) or []
     if type(stops) != "list":
         return []
@@ -174,7 +192,12 @@ def get_schema():
 
 def get_settings(config):
     """The ONE place station config is read. Adding fields here is contained;
-    nothing downstream knows where the stop id came from."""
+    nothing downstream knows where the stop id came from.
+
+    Note (final review, M10): an older iteration of this app read a plain
+    "stop_id" config key directly; that key is no longer read at all -- only
+    "station" (the typeahead JSON blob) is recognized now.
+    """
     stop_id = DEFAULT_STOP_ID
     raw = config.get("station", DEFAULT_STATION_JSON)
 
