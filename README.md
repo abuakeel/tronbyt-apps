@@ -11,11 +11,19 @@ apps here appear in the picker labelled "Git Repository app".
 `internal/apps/apps.go:183` scans `<repo>/apps/<name>/` and takes the **first
 `*.star`** it finds in each directory.
 
-> **`manifest.yaml` is IGNORED for user-repo apps.** Metadata is derived from the
-> directory name -- ID, Name and PackageName all equal it, Author becomes your
-> tronbyt username, Summary is hardcoded to "Git Repository app". **The folder
-> name is what shows in the picker**, so name it for humans. Manifests here are
-> documentation only.
+> **`manifest.yaml` is read on one path and ignored on the other.** This trips people
+> up, so be precise about which view you are looking at:
+>
+> - **The app picker ignores it.** `scanUserAppsDir` (`apps.go:183`) derives ID, Name
+>   and PackageName from the **directory name**, Author from your tronbyt username,
+>   and hardcodes Summary to "Git Repository app". **The folder name is what shows in
+>   the picker**, so name it for humans -- a manifest `name:` will not change it.
+> - **The config page DOES read it.** `getAppMetadata` (`helpers.go:514`) falls back to
+>   `manifest.yaml` for any app not in the system-apps cache, which is every user-repo
+>   app, and `manager/configapp.html` renders `.AppMetadata.Desc` from it.
+>
+> So `desc:` is **user-facing**. Keep it short and write it for whoever is configuring
+> the app. Engineering notes belong in this README.
 
 Optional previews follow a convention: `<starname>.webp` and `<starname>@2x.webp`.
 
@@ -84,3 +92,32 @@ python3 tools/gate.py --bullets        # assert bullet_form() route-id -> (form,
 Use **v0.53.1 of the tronbyt fork** -- `tronbyt/server` pins
 `github.com/tronbyt/pixlet v0.53.1`, so this is what the server renders with.
 Prebuilt release binaries need no Go toolchain.
+
+## Failure behaviour
+
+Moved here from `manifest.yaml`'s `desc`, which is user-facing and was being used as
+an engineering notebook.
+
+**An HTTP-level feed failure degrades gracefully.** A 4xx/5xx from `api.subwaynow.app`
+renders both rows as `NO TRAINS` with a dim bullet. A non-JSON body (a proxy's HTML
+error page returned with a 200) is also survivable — `fetch_json` uses
+`json.decode(resp.body(), None)` rather than `resp.json()`, which is fatal.
+
+**A WAN or DNS outage is NOT recoverable from app code.** Starlark has no
+`try`/`except`, and a transport-level failure inside `http.get()` — DNS resolution,
+connection refused, timeout — aborts the whole render with a fatal error before any
+app code runs, no matter how defensively `fetch_json` is written. Verified by reading
+pixlet's own `runtime/modules/starlarkhttp` and reproducing the fatal error directly.
+This is a limitation of every Pixlet app, not something specific to this one.
+
+**But the failure is transient, not sticky** — confirmed by reading `tronbyt/server`'s
+source. On a render failure the server sets `EmptyLastRender=true` and rotation skips
+the app for that cycle (`rotation.go:217,240,311`), but `LastRender` is updated
+regardless, so it retries at the next `UInterval` automatically. A pinned app falls
+through to normal rotation without being unpinned (`rotation.go:249`).
+
+`broken` is a **separate, manual, UI-only curation flag** an operator sets by hand; a
+failed render never sets it, and no manual re-enable is needed.
+
+Net effect: during an outage the app blinks out of rotation and resumes on its own the
+moment the feed is reachable again, with no operator action.
