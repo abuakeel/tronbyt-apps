@@ -127,11 +127,18 @@ New deterministic coverage, all through the mock — **no live data**, because a
 on which trains happen to be running is not a guard (learned the hard way on the label-source
 check):
 
-- A `6X` trip renders a **diamond** showing `6`, not a circle showing `6X`.
-- A `FS` trip renders a **circle** showing `S`.
-- A `G` trip renders exactly what it renders today — pixel-identical to the current output.
-- An unknown multi-char id (e.g. `ZZ`) renders a circle with `Z` and does not crash.
+- `tools/gate.py --bullets` probes `bullet_form()` directly (route-id -> form/letter/font) for the
+  six multi-character ids, representative single-character ones, and an unknown-id fallback.
+- The same `--bullets` run **also renders** a `6X` trip and a `FS` trip through `render_via_mock`
+  (the real pixel path, not just the classifier) and pins a hash of the *rendered* 11x11 bullet
+  region: the `6X` trip must render a **diamond** showing `6`, not a circle showing `6X`; the `FS`
+  trip must render a **circle** showing `S`. This is what actually connects `bullet_form()` to what
+  gets drawn — the classification probe alone cannot, since it never calls pixlet.
+- `python3 tools/gate.py` (default, whole-frame) already covers a `G` trip rendering
+  pixel-identical to the current output, and `bullet_form()`'s own unknown-id case covers `ZZ`.
 
-Each new check must be **mutation-proven**: disable the express mapping and confirm the `6X` check
-fails; restore. A guard nobody has watched fail is not a guard — this project has shipped four of
-those, every one caught by review rather than by its author.
+Each new check must be **mutation-proven**: disable the express mapping (`if form == "diamond":` ->
+`if False:`), flatten `diamond()`'s width formula to a solid square, or zero out the letter's
+padding, and confirm the pixel-signature check in `--bullets` fails each time; restore after each.
+A guard nobody has watched fail is not a guard — this project has shipped five of those, every one
+caught by review rather than by its author.

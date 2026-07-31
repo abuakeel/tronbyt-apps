@@ -50,12 +50,18 @@ Modes:
                        cap against a synthetic over-cap fixture, and
                        must-never-raise on a fetch failure.
   --bullets           probe bullet_form() via a print()-based harness: asserts
-                       route-id -> (form, letter) for the six multi-character
-                       ids, representative single-character ones, and an
-                       unknown-id fallback. Deterministic, no live data.
+                       route-id -> (form, letter, font) for the six
+                       multi-character ids, representative single-character
+                       ones, and an unknown-id fallback -- PLUS a pixel-level
+                       render check (see BULLET_PIXEL_CASES below) that pins
+                       an actual rendered bullet's pixels, so a broken
+                       connection between bullet_form() and render_row/
+                       diamond() can't hide behind an all-green classification
+                       probe. Deterministic, no live data.
 """
 import argparse
 import copy
+import hashlib
 import json
 import re
 import shutil
@@ -660,6 +666,65 @@ def check_live_duplicate_labels(failures):
 FONT_DEST = "Dina_r400-6"
 FONT_BULLET_EXPRESS = "tom-thumb"
 
+# --- bullet PIXEL check (final review, IMPORTANT 1) ------------------------
+# The classification probe above only proves bullet_form() returns the right
+# strings -- nothing connects that pure function to what render_row() and
+# diamond() actually draw. Verified by mutation: reverting `if form ==
+# "diamond":` to `if False:`, flattening diamond()'s width formula to a
+# solid square, zeroing the letter's padding so it gets clipped by the
+# taper, or bypassing bullet_form() entirely with a hardcoded ("circle",
+# route_id, FONT_DEST) all left the classification probe, --failures, and
+# the default whole-frame gate green -- because no fixture anywhere carries
+# a multi-character route_id, and compare.py's STATIC_REGIONS deliberately
+# excludes the bullet regions (they carry live route colour/letter). This
+# renders one real trip per case through render_via_mock -- the same path
+# production uses -- and pins a hash of the *rendered* 11x11 north-bullet
+# region (BULLET_DIAMETER=11, padded by render_row's pad=(2,2,2,2): x
+# 2..12, y 2..12 inclusive), so a broken diamond, a solid square, clipped
+# text, or a bypassed bullet_form() all show up as a changed pixel
+# signature -- never just a changed classification string. Deterministic:
+# fixed stop id, route id, colour and arrival offset, no live data.
+BULLET_PIXEL_REGION = (2, 2, 13, 13)  # x0, y0, x1, y1 (exclusive) -- 11x11
+
+BULLET_PIXEL_CASES = [
+    # (label, route_id, route_color, expected sha1[:12] of the lit/unlit mask)
+    ("6X (express diamond)", "6X", "#00933c", "5226cda2ff48"),
+    ("FS (shuttle circle)", "FS", "#808183", "1fc4b7acf37a"),
+]
+
+
+def bullet_pixel_signature(route_id, route_color):
+    """Render a single north-bound trip on `route_id` and return a sha1[:12]
+    signature of the lit/unlit mask over BULLET_PIXEL_REGION.
+
+    Returns (signature, mask) on success, or (None, stderr) if pixlet
+    crashed. Uses render_via_mock -- the same production render path every
+    other gate mode exercises -- with no app_config, so the app resolves
+    the stop via DEFAULT_STOP_ID/DEFAULT_STATION_JSON exactly like a
+    never-configured device.
+    """
+    routes = {"routes": {route_id: {"id": route_id, "color": route_color}}}
+    stops = {"stops": [{"id": "G35", "name": "Test Stop"}, {"id": "PXDEST", "name": "Test Destination"}]}
+    stop = {
+        "id": "G35",
+        "upcoming_trips": {
+            "north": [{"route_id": route_id, "destination_stop": "PXDEST", "arrival_offset": 30}],
+        },
+    }
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "frame.webp"
+        result = render_via_mock(routes, stops, stop, out_path)
+        if result.returncode != 0:
+            return None, result.stderr
+        img = load_scaled(str(out_path), scale_from(str(out_path)))
+        x0, y0, x1, y1 = BULLET_PIXEL_REGION
+        mask = "".join(
+            "#" if lit(img[x, y]) else "."
+            for y in range(y0, y1)
+            for x in range(x0, x1)
+        )
+        return hashlib.sha1(mask.encode()).hexdigest()[:12], mask
+
 
 def cmd_bullets():
     """Assert route-id -> bullet form classification, deterministically.
@@ -670,6 +735,10 @@ def cmd_bullets():
     above); a check that discards it would pass even if the express bullet's
     font silently reverted to the unreadable local one. No live data: a guard
     that depends on which trains happen to be running is not a guard.
+
+    Also runs BULLET_PIXEL_CASES (see above) -- a render-level check that
+    catches mutations to render_row()/diamond() itself, which the
+    classification probe above cannot see since it never calls pixlet.
     """
     cases = [
         ("6X", "diamond|6|" + FONT_BULLET_EXPRESS),
@@ -693,7 +762,12 @@ def cmd_bullets():
     src += '    print("PROBE-DONE")\n'
     src += '    return render.Root(child = render.Box(color = "#000000"))\n'
 
-    got = run_probe(src, {"stops": []})
+    try:
+        got = run_probe(src, {"stops": []})
+    except RuntimeError as e:
+        print(f"  classification probe: {e}")
+        print("bullets: FAIL")
+        return 1
     seen = dict(line.split("=", 1) for line in got if "=" in line)
 
     failures = []
@@ -701,6 +775,19 @@ def cmd_bullets():
         actual = seen.get(route_id)
         if actual != expected:
             failures.append("  %s: expected %r, got %r" % (route_id, expected, actual))
+
+    for label, route_id, route_color, expected_sig in BULLET_PIXEL_CASES:
+        sig, mask_or_err = bullet_pixel_signature(route_id, route_color)
+        if sig is None:
+            failures.append(f"  pixel {label}: FAIL -- render crashed: {mask_or_err}")
+        elif sig != expected_sig:
+            failures.append(
+                f"  pixel {label}: FAIL -- bullet pixel signature {sig} != "
+                f"expected {expected_sig}\n"
+                + "\n".join(
+                    "    " + mask_or_err[i * 11:(i + 1) * 11] for i in range(11)
+                )
+            )
 
     for line in failures:
         print(line)

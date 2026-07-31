@@ -20,10 +20,13 @@ apps here appear in the picker labelled "Git Repository app".
 >   the picker**, so name it for humans -- a manifest `name:` will not change it.
 > - **The config page DOES read it.** `getAppMetadata` (`helpers.go:514`) falls back to
 >   `manifest.yaml` for any app not in the system-apps cache, which is every user-repo
->   app, and `manager/configapp.html` renders `.AppMetadata.Desc` from it.
+>   app, populating the whole `Manifest` struct -- `manager/configapp.html` renders
+>   `.AppMetadata.Desc`, `.AppMetadata.Summary`, and `.AppMetadata.RecommendedInterval`
+>   from it.
 >
-> So `desc:` is **user-facing**. Keep it short and write it for whoever is configuring
-> the app. Engineering notes belong in this README.
+> So `desc:` **and** `summary:` are **user-facing on the config page** -- only the
+> *picker* hardcodes Summary to "Git Repository app". Keep them short and write them for
+> whoever is configuring the app. Engineering notes belong in this README.
 
 Optional previews follow a convention: `<starname>.webp` and `<starname>@2x.webp`.
 
@@ -78,13 +81,17 @@ python3 tools/gate.py --handler        # assert search_stations() labelling via 
                                         # own main() calling the handler and printing results
                                         # (Starlark print() reaches stdout as "[<app>.star] <line>")
 
-python3 tools/gate.py --bullets        # assert bullet_form() route-id -> (form, letter)
+python3 tools/gate.py --bullets        # assert bullet_form() route-id -> (form, letter, font)
                                         # classification via the same print()-based probe:
                                         # the six multi-character ids (6X 7X FX express,
                                         # FS GS SI shuttle), representative single-character
-                                        # ids, and an unknown-id fallback. Deterministic, no
-                                        # live data -- a guard that depends on which trains
-                                        # happen to be running is not a guard
+                                        # ids, and an unknown-id fallback -- PLUS a pixel-level
+                                        # render check that pins an actual rendered bullet's
+                                        # pixels, so a broken connection between bullet_form()
+                                        # and the renderer can't hide behind an all-green
+                                        # classification probe. Deterministic, no live data --
+                                        # a guard that depends on which trains happen to be
+                                        # running is not a guard
 ```
 
 ## Pixlet version matters

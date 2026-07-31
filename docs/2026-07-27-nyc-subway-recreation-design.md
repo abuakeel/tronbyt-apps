@@ -83,11 +83,14 @@ tronbyt-apps/
 
 The server clones this to `data/users/<username>/repo` and scans `<repo>/apps/*/`.
 
-> **User-repo apps ignore `manifest.yaml` completely.** Unlike system apps, metadata is derived
-> from the **directory name** — ID, Name and PackageName all equal it, Author becomes the tronbyt
-> username, and Summary is hardcoded to "Git Repository app". **The folder name is what shows in
-> the app picker**, so name it for humans. A `manifest.yaml` may be included for documentation, but
-> the server will not read it.
+> **`manifest.yaml` is read on one path and ignored on the other.** The **picker** ignores it:
+> `scanUserAppsDir` (`apps.go:183`) derives ID, Name and PackageName from the **directory name**,
+> Author from the tronbyt username, and hardcodes Summary to "Git Repository app" — **the folder
+> name is what shows in the app picker**, so name it for humans. The **config page** DOES read it:
+> `getAppMetadata` (`helpers.go:514`) falls back to `manifest.yaml` for any app not in the
+> system-apps cache (every user-repo app), and `configapp.html` renders `.AppMetadata.Desc` (and
+> `.Summary`, `.RecommendedInterval`) from it — so `desc:`/`summary:` are user-facing there even
+> though the picker never shows them.
 
 ## Data source: `api.subwaynow.app` (keyless)
 
