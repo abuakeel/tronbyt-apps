@@ -651,31 +651,44 @@ def check_live_duplicate_labels(failures):
         )
 
 
+# Mirrors apps/nyc-subway/nyc-subway.star's own FONT_DEST / FONT_BULLET_EXPRESS
+# constants, by value, so cmd_bullets' expectations read as "the local font"
+# and "the express font" rather than opaque string literals. The express font
+# is not cosmetic -- Dina_r400-6 is unreadable inside an 11px diamond, per the
+# comment at nyc-subway.star:73-75 -- so a mutation that reverts the font
+# choice must be caught here, not just the form/letter.
+FONT_DEST = "Dina_r400-6"
+FONT_BULLET_EXPRESS = "tom-thumb"
+
+
 def cmd_bullets():
     """Assert route-id -> bullet form classification, deterministically.
 
     bullet_form() is pure, so the probe calls it directly and prints one line
-    per case. No live data: a guard that depends on which trains happen to be
-    running is not a guard.
+    per case. All three return values (form, letter, font) are asserted --
+    the font matters as much as the form/letter (see FONT_BULLET_EXPRESS
+    above); a check that discards it would pass even if the express bullet's
+    font silently reverted to the unreadable local one. No live data: a guard
+    that depends on which trains happen to be running is not a guard.
     """
     cases = [
-        ("6X", "diamond|6"),
-        ("7X", "diamond|7"),
-        ("FX", "diamond|F"),
-        ("FS", "circle|S"),
-        ("GS", "circle|S"),
-        ("SI", "circle|S"),
-        ("G", "circle|G"),
-        ("A", "circle|A"),
-        ("6", "circle|6"),
-        ("ZZ", "circle|Z"),
+        ("6X", "diamond|6|" + FONT_BULLET_EXPRESS),
+        ("7X", "diamond|7|" + FONT_BULLET_EXPRESS),
+        ("FX", "diamond|F|" + FONT_BULLET_EXPRESS),
+        ("FS", "circle|S|" + FONT_DEST),
+        ("GS", "circle|S|" + FONT_DEST),
+        ("SI", "circle|S|" + FONT_DEST),
+        ("G", "circle|G|" + FONT_DEST),
+        ("A", "circle|A|" + FONT_DEST),
+        ("6", "circle|6|" + FONT_DEST),
+        ("ZZ", "circle|Z|" + FONT_DEST),
     ]
     src = read_patched_star_source()
     src += "\n\ndef main(config):\n"
     for route_id, _ in cases:
         src += (
-            '    f, l, _ = bullet_form("%s")\n' % route_id
-            + '    print("%s=" + f + "|" + l)\n' % route_id
+            '    f, l, ft = bullet_form("%s")\n' % route_id
+            + '    print("%s=" + f + "|" + l + "|" + ft)\n' % route_id
         )
     src += '    print("PROBE-DONE")\n'
     src += '    return render.Root(child = render.Box(color = "#000000"))\n'
