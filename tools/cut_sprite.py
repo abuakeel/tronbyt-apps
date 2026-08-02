@@ -13,12 +13,18 @@ cut and prove the embedded copy has not drifted.
 
 Regions, measured off reference/citibike-64x32.png:
 
-  bike sprite  x20-38, rows 11-29  -- x20 is the only band that touches
-                                      neither wheel (rear wheel ends at x17,
-                                      front wheel starts at x25), which is
-                                      what makes the left-shift cut land in
-                                      the frame tubes rather than through a
-                                      wheel
+  bike sprite  x12-38, rows 11-29  -- the cut passes through the rear wheel
+                                      (which spans x4-17), and that is
+                                      deliberate: it lands at the PANEL'S
+                                      LEFT EDGE, where a sliced shape reads
+                                      as continuing past the frame. The same
+                                      slice mid-frame, with black either
+                                      side, would read as a rendering bug.
+                                      Cutting clear of both wheels is only
+                                      possible at x18-24, which leaves just
+                                      15-21px of bike and a 27px dead gap --
+                                      too aggressive a crop, rejected on
+                                      review of the rendered frame.
   bolt icon    x50-53, rows 24-28
 
 Usage:
@@ -35,7 +41,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_PNG = ROOT / "reference" / "citibike-64x32.png"
 
-SPRITE_BOX = (20, 11, 39, 30)  # x0, y0, x1, y1 (exclusive) -> 19x19
+SPRITE_BOX = (12, 11, 39, 30)  # x0, y0, x1, y1 (exclusive) -> 27x19
 BOLT_BOX = (50, 24, 54, 29)    # -> 4x5
 
 

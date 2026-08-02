@@ -9,11 +9,18 @@ load("encoding/base64.star", "base64")
 # strings directly. tools/gate_citibike.py --sprite re-derives the cut from
 # the reference and fails if what renders here has drifted from it.
 #
-# SPRITE_B64 is the bike at original x20-38, rows 11-29 (19x19). x20 is the
-# only column band that touches neither wheel, so shifting the sprite left to
-# x0 cuts through the frame tubes between the seat and the handlebars, and the
-# front wheel arrives whole.
-SPRITE_B64 = "iVBORw0KGgoAAAANSUhEUgAAABMAAAATCAIAAAD9MqGbAAABUUlEQVR4nJ2Sy26CQBSGf2itOzfGB4Bhxq0+BAr6rrVNU5Davolu1YBxiEak6DBdqJSi2Oi/O5dvzmWOgr+aTqcAqtVqvV7HHSK9EemN7iEBGL2P6wlqWUDK9F4y3V0nHy96jf4noNxck9iulClkavS/biCJ5cp0h1SMHVOKBEAYhpzzTbRZr9elz5Cuo1vvmjk4mJxzvfNKKT2YjLEgCDjnRUzvvGrmQDNfDmYQBIwxzXwupFFKfd/PN+kQ2zNyvx9F0WlsrwBvt9vjnMT2oDwAcuyYGdZut0+Zklhunmy1WnEcK8QeSvGtqE+ToZ3FVqtVrVb77cj2ADlxrXxZFTIFkMcA7Pf7vClFDCmLDevdN5zJ9/1speeilC4Wi7LocQ1XQqV3myQJY+zc32w2C7NcUBiGy+Uyfwnz+Ty7hH/OGsBsNhNCVCoVVVUbjUbm/wEnz5+RapOfUAAAAABJRU5ErkJggg=="
+# SPRITE_B64 is the bike at original x12-38, rows 11-29 (27x19): seat, most of
+# the frame, and the whole front wheel, with the rear wheel running off the
+# left edge.
+#
+# The cut DOES pass through the rear wheel (x4-17), deliberately. It lands at
+# the panel's left edge, where a sliced shape reads as continuing past the
+# frame; the same slice mid-frame, with black on both sides, reads as a
+# rendering bug. Cutting clear of both wheels is only possible in the x18-24
+# tube band, which leaves 15-21px of bike against a 27px dead gap -- tried at
+# x20 first, and rejected on review of the rendered frame as too aggressive a
+# crop.
+SPRITE_B64 = "iVBORw0KGgoAAAANSUhEUgAAABsAAAATCAIAAADu5eFvAAACEElEQVR4nK2Tz27aQBDGv11CqEK5gMw9NpgrXOAJoDaRmrbqc7aiUjCB9EGAAAckQFjYSBb/vTs9mCCnicCVOqfdmW9/OzszyxDNJpMJgEQikclkIh6JZFq9o9U7/5MIIFdvnxfw+Xy+Wq2iE4nkBWI2m/U8z3GcxWIxHo8vE+Uh0s25aNXJ3T3l7n5fyPF4M9HFAmmmRSRB8jyUA1CNh4FVIynO4QyL5AFSPDerJPYAlsul67qr9crzvFdStdZQa41gfVv98T7uU1M1Hm6rP4Ot67pqrZHP54Otruu2bbuue8xRih3Ajur3+qjWGlLuSBxGna8AbNuuVCpEot/vB4Jer6coSrlcns/nADi/umGxa351A2D09F0zmq8f22SxD7H4x1HnS+BJJpO9Xm/U+aaZj2Flv99PpVLHOoIIIO1NZzTzESwG0HOzGnjW63WpVHqJk2ZYYX2xWNxutxwgME4kgiefxk0zWyS2IDmwjNMZ3/e73W6wHlgGGNfM1ina7XaJiAFQa7/AGAASO8bjYDEAjHGSh2H7PpyF4zjpdDpcYsavBy0zLOAAhu3PJH2SPpEgEiQPgCQSf+GCHE8tBjBs34dx+XxeypfeRv/am83mfIgD0HVdiHPjHbb9fq/r+lt/oVDwfR8AZrPZYrGIiAtsuVw6jhOe8Nlsdppw9k+ssE2nUyFEPB7nnCuKcvL/AceUE/juiRW1AAAAAElFTkSuQmCC"
 
 # BOLT_B64 is the e-bike lightning bolt at original x50-53, rows 24-28 (4x5).
 BOLT_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAFCAIAAADtz9qMAAAARUlEQVR4nAXBMQqAMBBFwfcXUlpq54EU9bKC5wnYJIogiJ2bOCPg2McQzL+iFAeEmbp+EwC81+JeAe48PecMGFC8Nu0K/LfrFWgPimJNAAAAAElFTkSuQmCC"
