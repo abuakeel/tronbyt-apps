@@ -391,6 +391,165 @@ def cmd_sprite():
     return 1
 
 
+# --- --handler mode ------------------------------------------------------
+
+
+def cmd_handler():
+    """Probe search_stations() -- it cannot be reached through `pixlet render`
+    directly, so a probe main() calls it and prints one line per option."""
+    stations = [
+        {"station_id": "S1", "name": "DeKalb Ave & S Portland Ave", "short_name": "4546.06"},
+        {"station_id": "S2", "name": "DeKalb Ave & Hudson Ave", "short_name": "4491.05"},
+        # A genuine duplicate name -- two stations, same name, different ids.
+        # Without short_name disambiguation these are indistinguishable in the
+        # picker and the user cannot tell which one they are choosing.
+        {"station_id": "S3", "name": "Twin Name Plaza", "short_name": "1000.01"},
+        {"station_id": "S4", "name": "Twin Name Plaza", "short_name": "2000.02"},
+        {"station_id": "S5", "name": "Nameless Test Dock"},
+    ]
+    checks = [
+        # Mixed case: a handler that dropped .lower() finds nothing here.
+        ("DEKalb", ["DeKalb Ave & Hudson Ave|S2", "DeKalb Ave & S Portland Ave|S1"]),
+        ("twin name", ["Twin Name Plaza (1000.01)|S3", "Twin Name Plaza (2000.02)|S4"]),
+        ("nameless", ["Nameless Test Dock|S5"]),
+        ("zzzznomatch", []),
+    ]
+    failures = []
+    for pattern, expected in checks:
+        src = read_patched_star_source()
+        src += (
+            "\n\ndef main(config):\n"
+            f'    for o in search_stations("{pattern}"):\n'
+            '        print(o.display + "|" + o.value)\n'
+            '    print("PROBE-DONE")\n'
+            '    return render.Root(child = render.Box(color = "#000000"))\n'
+        )
+        try:
+            got = run_probe(src, info_body(stations), status_body([]))
+        except RuntimeError as e:
+            failures.append(f"  {pattern!r}: {e}")
+            continue
+        if sorted(got) != sorted(expected):
+            failures.append(f"  {pattern!r}: expected {expected}, got {got}")
+
+    # The cap: the fixture above never yields more than 2 matches, so it
+    # cannot exercise a 20-result limit at all -- deleting the cap entirely
+    # would still pass every check above. 25 synthetic matches force it to bind.
+    cap_stations = [
+        {"station_id": "C%02d" % i, "name": "Capacity Test %d" % i, "short_name": "%d.00" % i}
+        for i in range(25)
+    ]
+    src = read_patched_star_source()
+    src += (
+        "\n\ndef main(config):\n"
+        '    print("cap=" + str(len(search_stations("capacity"))))\n'
+        '    print("PROBE-DONE")\n'
+        '    return render.Root(child = render.Box(color = "#000000"))\n'
+    )
+    try:
+        got = run_probe(src, info_body(cap_stations), status_body([]))
+    except RuntimeError as e:
+        failures.append(f"  cap: {e}")
+    else:
+        if got != ["cap=20"]:
+            failures.append(f"  cap: expected ['cap=20'], got {got}")
+
+    # Feed down: the handler must return [] and MUST NOT raise. A raising
+    # handler breaks the config UI itself, not just the render, and Starlark
+    # has no try/except for the caller to fall back on.
+    src = read_patched_star_source()
+    src += (
+        "\n\ndef main(config):\n"
+        '    print("n=" + str(len(search_stations("dekalb"))))\n'
+        '    print("PROBE-DONE")\n'
+        '    return render.Root(child = render.Box(color = "#000000"))\n'
+    )
+    try:
+        got = run_probe(src, info_body(stations), status_body([]), http_status=503)
+    except RuntimeError as e:
+        failures.append(f"  feed-down: handler CRASHED or never completed: {e}")
+    else:
+        if got != ["n=0"]:
+            failures.append(f"  feed-down: expected ['n=0'], got {got}")
+
+    check_schema(failures)
+    check_live_search(failures)
+
+    for line in failures:
+        print(line)
+    print("handler: OK" if not failures else "handler: FAIL")
+    return 1 if failures else 0
+
+
+def check_schema(failures):
+    """get_schema() must produce a valid typeahead field wired to the handler.
+
+    Nothing else here reaches get_schema(): `pixlet render` never calls it, and
+    the probes above call search_stations() directly. So a malformed field -- a
+    typo'd id, a dropped handler, an icon pixlet rejects -- would sail through
+    every other check and only surface as a broken config page on the device.
+    `pixlet schema` is what the server itself uses to build that page.
+    """
+    result = subprocess.run(
+        ["pixlet", "schema", str(APP_SRC)], capture_output=True, text=True, timeout=60
+    )
+    if result.returncode != 0:
+        failures.append(f"  schema: pixlet rejected it (exit {result.returncode}): {result.stderr.strip()}")
+        return
+    try:
+        parsed = json.loads(result.stdout)
+    except ValueError as e:
+        failures.append(f"  schema: output was not JSON: {e}")
+        return
+    fields = parsed.get("schema") or []
+    station = [f for f in fields if f.get("id") == "station"]
+    if not station:
+        failures.append(f"  schema: no field with id 'station'; got {[f.get('id') for f in fields]}")
+        return
+    field = station[0]
+    if field.get("type") != "typeahead":
+        failures.append(f"  schema: station field is {field.get('type')!r}, expected 'typeahead'")
+    if not field.get("handler"):
+        failures.append("  schema: station field has no handler -- the picker would return nothing")
+
+
+def check_live_search(failures):
+    """Run the real handler against the REAL station list, served back through
+    the mock so the app's own fetch path stays unmodified.
+
+    Every other check here runs against a <=25-station synthetic fixture. The
+    subway cycle's equivalent bug -- duplicate labels that make picker entries
+    indistinguishable -- was invisible to synthetic fixtures and only turned up
+    against real data, which is why this exists.
+    """
+    try:
+        with urllib.request.urlopen(LIVE_BASE + "station_information.json", timeout=30) as resp:
+            live_info = json.loads(resp.read().decode())
+    except Exception as e:
+        failures.append(f"  live-search: FAIL -- could not fetch live station_information: {e}")
+        return
+
+    src = read_patched_star_source()
+    src += (
+        "\n\ndef main(config):\n"
+        '    for o in search_stations("ave"):\n'
+        '        print(o.display)\n'
+        '    print("PROBE-DONE")\n'
+        '    return render.Root(child = render.Box(color = "#000000"))\n'
+    )
+    try:
+        labels = run_probe(src, live_info, status_body([]))
+    except RuntimeError as e:
+        failures.append(f"  live-search: {e}")
+        return
+
+    if len(labels) != 20:
+        failures.append(f"  live-search: expected the 20-result cap to bind on 'ave', got {len(labels)}")
+    dups = sorted({label for label in labels if labels.count(label) > 1})
+    if dups:
+        failures.append(f"  live-search: duplicate labels against live data: {dups[:5]}")
+
+
 # --- default / --ascii / --bless -----------------------------------------
 
 
@@ -466,6 +625,7 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--counts", action="store_true", help="probe counts() and station_name()")
     group.add_argument("--sprite", action="store_true", help="pin the sprite against the reference cut")
+    group.add_argument("--handler", action="store_true", help="probe search_stations()")
     group.add_argument("--ascii", action="store_true", help="print the fixture render as ASCII")
     group.add_argument("--bless", action="store_true", help="overwrite the golden PNG")
     args = parser.parse_args()
@@ -474,6 +634,8 @@ def main():
         sys.exit(cmd_counts())
     if args.sprite:
         sys.exit(cmd_sprite())
+    if args.handler:
+        sys.exit(cmd_handler())
     if args.ascii:
         sys.exit(cmd_ascii())
     if args.bless:

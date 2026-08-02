@@ -2,6 +2,7 @@ load("render.star", "render")
 load("http.star", "http")
 load("encoding/json.star", "json")
 load("encoding/base64.star", "base64")
+load("schema.star", "schema")
 
 # --- embedded art ---------------------------------------------------------
 # Cut from reference/citibike-64x32.png by tools/cut_sprite.py -- NOT drawn by
@@ -227,6 +228,59 @@ def counts(station_id):
             classic = 0
         return (str(classic), str(ebikes), str(docks))
     return (NO_DATA, NO_DATA, NO_DATA)
+
+MAX_SEARCH_RESULTS = 20
+
+def search_stations(pattern):
+    """Typeahead handler. Returns at most MAX_SEARCH_RESULTS options.
+
+    Must never raise -- a failed fetch yields an empty list, which the picker
+    shows as "no matches". A raising handler would break the config UI itself.
+
+    Two passes, deliberately: station names are intersection-derived and
+    almost always unique, but "almost" is not "always", and two identically
+    named entries are indistinguishable to whoever is choosing one. The first
+    pass counts names so the second can append short_name to ONLY the
+    colliding ones, instead of noising up every label with a dock number.
+    """
+    needle = pattern.lower()
+    matches = []
+    name_counts = {}
+    for s in station_records(STATION_INFO_URL, INFO_TTL):
+        if type(s) != "dict":
+            continue
+        name = s.get("name")
+        station_id = s.get("station_id")
+        if type(name) != "string" or type(station_id) != "string":
+            continue
+        if needle not in name.lower():
+            continue
+        matches.append((name, station_id, s.get("short_name")))
+        name_counts[name] = name_counts.get(name, 0) + 1
+
+    out = []
+    for name, station_id, short_name in matches:
+        display = name
+        if name_counts[name] > 1 and type(short_name) == "string" and short_name:
+            display = name + " (" + short_name + ")"
+        out.append(schema.Option(display = display, value = station_id))
+        if len(out) >= MAX_SEARCH_RESULTS:
+            break
+    return out
+
+def get_schema():
+    return schema.Schema(
+        version = "1",
+        fields = [
+            schema.Typeahead(
+                id = "station",
+                name = "Station",
+                desc = "CitiBike station to show availability for.",
+                icon = "bicycle",
+                handler = search_stations,
+            ),
+        ],
+    )
 
 def get_settings(config):
     """The ONE place station config is read.
