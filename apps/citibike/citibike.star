@@ -41,29 +41,40 @@ SPRITE_WIDTH = 35
 # are load-bearing: render.Animation LOOPS its children, so a 25-frame
 # animation would roll the bike in again every 2.5s. Padding the list to the
 # full render length is what makes it happen exactly once.
+# The bike parks one pixel clear of the left edge rather than flush against
+# it, so the rear wheel is not the panel's own border.
+PARK_X = 1
+
 FRAME_MS = 100
 TOTAL_FRAMES = 150
 ROLL_HOLD_FRAMES = 10   # 1.0s parked off-screen before anything moves
-ROLL_CONST_FRAMES = 10  # 1.0s at constant speed
+ROLL_CONST_FRAMES = 7   # 0.7s at constant speed
 ROLL_EASE_FRAMES = 5    # 0.5s decelerating to a stop
 
+# The roll totals 1.2s, not the 1.25s asked for: at FRAME_MS = 100 that would
+# be 12.5 frames, which is not a thing that can be rendered. Rounded to the
+# FASTER side, since the point of the change was "quicker". Hitting 1.25s
+# exactly would mean FRAME_MS = 125, which also slows the station-name marquee
+# by a quarter -- a worse trade for 50ms.
+
 def roll_x(frame):
-    """Sprite x offset on `frame`: -SPRITE_WIDTH (fully off-screen) up to 0.
+    """Sprite x offset on `frame`: -SPRITE_WIDTH (fully off-screen) to PARK_X.
 
     Speed is solved, not tuned by eye: a constant phase of v px/frame followed
     by a linear decel from v to 0 covers v*const + v*ease/2 pixels, so
-    v = SPRITE_WIDTH / (const + ease/2) makes the bike arrive exactly at x=0
-    on the last frame of the roll -- no overshoot to clamp away, and no
-    fractional remainder parked one pixel short.
+    v = distance / (const + ease/2) makes the bike arrive exactly on PARK_X on
+    the last frame of the roll -- no overshoot to clamp away, and no fractional
+    remainder parked one pixel short.
     """
     if frame < ROLL_HOLD_FRAMES:
         return -SPRITE_WIDTH
 
     step = frame - ROLL_HOLD_FRAMES + 1
     if step >= ROLL_CONST_FRAMES + ROLL_EASE_FRAMES:
-        return 0
+        return PARK_X
 
-    v = SPRITE_WIDTH / (ROLL_CONST_FRAMES + ROLL_EASE_FRAMES / 2.0)
+    distance = SPRITE_WIDTH + PARK_X
+    v = distance / (ROLL_CONST_FRAMES + ROLL_EASE_FRAMES / 2.0)
     if step <= ROLL_CONST_FRAMES:
         travelled = v * step
     else:

@@ -54,8 +54,9 @@ EXPECTED_BASE_COUNT = 1
 W, H = 64, 32
 
 # The sprite's screen footprint: the whole bike, original x4-38, rows 11-29,
-# shifted left 4 to x0-34. (x0, y0, x1, y1), x1/y1 exclusive.
-SPRITE_REGION = (0, 11, 35, 30)
+# parked at x1-35 -- one pixel clear of the left edge, so the rear wheel is not
+# the panel's own border. (x0, y0, x1, y1), x1/y1 exclusive.
+SPRITE_REGION = (1, 11, 36, 30)
 SPRITE_SOURCE_X = 4  # must track tools/cut_sprite.py's SPRITE_BOX left edge
 
 
@@ -441,7 +442,9 @@ def cmd_sprite():
 # decelerates. The app's frame counts are read out of the source and checked
 # against these, so changing a constant without meaning to fails here.
 SPEC_HOLD_S = 1.0
-SPEC_ROLL_S = 1.5
+# 1.2s, not the 1.25s originally asked for: at 100ms/frame that is 12.5 frames,
+# which cannot be rendered. Rounded to the faster side deliberately.
+SPEC_ROLL_S = 1.2
 SPEC_EASE_S = 0.5
 
 # The bike's own column band. Measuring the sprite's right edge anywhere wider

@@ -113,7 +113,7 @@ python3 tools/gate_citibike.py --counts    # probe counts()/station_name() again
                                             # synthetic records: the classic-bike
                                             # subtraction and its clamp, not-renting,
                                             # malformed, absent, feed down
-python3 tools/gate_citibike.py --motion    # pin the roll-in: 1.0s still, 1.5s of
+python3 tools/gate_citibike.py --motion    # pin the roll-in: 1.0s still, 1.2s of
                                             # motion decelerating over the last 0.5s,
                                             # then PARKED for the rest of the render
                                             # (a looping animation would show up here
@@ -146,16 +146,18 @@ to it, and `--sprite` enforces that.
 - Three numbers instead of two: **classic** bikes, **e-bikes**, **open docks**.
   GBFS's `num_bikes_available` includes e-bikes, so classic is derived by
   subtraction and clamped at 0.
-- The bike sprite is shifted 4px left so the WHOLE bike starts at x0. Nothing
-  is cut. The third row costs vertical space, not horizontal: rows are
+- The bike sprite is shifted 3px left so the WHOLE bike sits at x1-35, one
+  pixel clear of the panel edge rather than flush against it. Nothing is cut. The third row costs vertical space, not horizontal: rows are
   right-aligned at x63 and even the widest 3-digit case only reaches x43, so
-  the full 35px sprite fits with 8px to spare. Two cropped versions (cut at x20,
+  the full 35px sprite fits with 7px to spare. Two cropped versions (cut at x20,
   then x12) were built and looked at on the device before that became obvious.
 - The dock icon's base is two rows thick. At one row it read as a plain letter
   U on the panel.
-- **The bike rolls in once.** 1.0s still with the bike off-screen, then 1.5s of
-  motion -- 1.0s at a constant ~2.8px/frame, then decelerating to a stop over
-  the last 0.5s -- and parked for the rest of the slot.
+- **The bike rolls in once.** 1.0s still with the bike off-screen, then 1.2s of
+  motion -- 0.7s at a constant ~3.8px/frame, then decelerating to a stop over
+  the last 0.5s -- and parked at x1 for the rest of the slot. (1.2s, not 1.25s:
+  at 100ms/frame that would be 12.5 frames. Rounded to the faster side; hitting
+  1.25s exactly needs FRAME_MS = 125, which also slows the marquee by a quarter.)
 
 > **Why the animation is 150 frames when the motion is 1.5s.** `render.Animation`
 > LOOPS its children, so a 25-frame animation would roll the bike in again every
