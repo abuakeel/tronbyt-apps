@@ -1,0 +1,38 @@
+{
+  "info": {
+    "data": {
+      "stations": [
+        {
+          "station_id": "1861271680294357158",
+          "name": "DeKalb Ave & S Portland Ave",
+          "short_name": "4546.06",
+          "capacity": 23
+        }
+      ]
+    },
+    "last_updated": 1782217425,
+    "ttl": 3600,
+    "version": "2.3"
+  },
+  "status": {
+    "data": {
+      "stations": [
+        {
+          "station_id": "1861271680294357158",
+          "num_bikes_available": 21,
+          "num_bikes_disabled": 0,
+          "num_docks_available": 15,
+          "num_docks_disabled": 0,
+          "num_ebikes_available": 20,
+          "is_installed": 1,
+          "is_renting": 1,
+          "is_returning": 1,
+          "last_reported": 1782217425
+        }
+      ]
+    },
+    "last_updated": 1782217425,
+    "ttl": 60,
+    "version": "2.3"
+  }
+}
