@@ -391,6 +391,95 @@ def cmd_sprite():
     return 1
 
 
+# --- --failures mode -----------------------------------------------------
+
+
+def run_one_failure_case(case_path, base):
+    case = load_json(case_path)
+    name = case_path.stem
+    info = case.get("info", base["info"])
+    status = case.get("status", base["status"])
+    http_status = case.get("http_status")
+    raw_body = case.get("raw_body")
+    app_config = case.get("config")
+
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "frame.webp"
+        result = render_via_mock(
+            info, status, out_path,
+            http_status=http_status, raw_body=raw_body, app_config=app_config,
+        )
+        if result.returncode != 0:
+            return False, (
+                f"{name}: FAIL -- pixlet render crashed (exit {result.returncode})\n"
+                f"{result.stderr}"
+            )
+        # The sprite must survive every degradation. It is the one region that
+        # depends on no feed value at all, so if it is broken here the failure
+        # is structural (a crash swallowed into a blank frame), not data.
+        got = frame_mask(str(out_path), SPRITE_REGION, scale_from(str(out_path)))
+    if got != reference_sprite_mask():
+        return False, f"{name}: FAIL -- sprite region damaged"
+    return True, f"{name}: OK"
+
+
+def cmd_failures():
+    base = load_json(REFERENCE_FIXTURE)
+    cases = sorted(FAILURES_DIR.glob("*.json"))
+    if not cases:
+        print(f"no failure fixtures found in {FAILURES_DIR}")
+        return 1
+    overall_ok = True
+    for case_path in cases:
+        ok, message = run_one_failure_case(case_path, base)
+        print(message)
+        overall_ok = overall_ok and ok
+    return 0 if overall_ok else 1
+
+
+# --- --shape mode --------------------------------------------------------
+
+
+def first_station(body):
+    stations = ((body or {}).get("data") or {}).get("stations") or []
+    return stations[0] if stations and isinstance(stations[0], dict) else {}
+
+
+def cmd_shape():
+    """Diff live GBFS KEY SETS against the pinned fixture.
+
+    Values change every minute and are useless to pin; the SHAPE is what the
+    app depends on. Only keys the fixture has and live has lost are failures --
+    new live-only keys are informational.
+    """
+    fixture = load_json(REFERENCE_FIXTURE)
+    problems = []
+    for label, url, fixture_body in (
+        ("station_information", LIVE_BASE + "station_information.json", fixture["info"]),
+        ("station_status", LIVE_BASE + "station_status.json", fixture["status"]),
+    ):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                live = json.loads(resp.read().decode())
+        except Exception as e:
+            problems.append(f"  {label}: could not fetch: {e}")
+            continue
+        missing = set(first_station(fixture_body)) - set(first_station(live))
+        if missing:
+            problems.append(f"  {label}: fixture keys missing from live: {sorted(missing)}")
+        extra = set(first_station(live)) - set(first_station(fixture_body))
+        if extra:
+            print(f"  {label}: INFO -- live has new keys: {sorted(extra)}")
+
+    if problems:
+        print(f"API shape drift detected vs {REFERENCE_FIXTURE}:")
+        for p in problems:
+            print(p)
+        return 1
+    print(f"OK -- live GBFS shape matches {REFERENCE_FIXTURE}")
+    return 0
+
+
 # --- --handler mode ------------------------------------------------------
 
 
@@ -626,6 +715,8 @@ def main():
     group.add_argument("--counts", action="store_true", help="probe counts() and station_name()")
     group.add_argument("--sprite", action="store_true", help="pin the sprite against the reference cut")
     group.add_argument("--handler", action="store_true", help="probe search_stations()")
+    group.add_argument("--failures", action="store_true", help="run tools/fixtures/citibike/failures/*.json")
+    group.add_argument("--shape", action="store_true", help="diff live GBFS key shape vs the fixture")
     group.add_argument("--ascii", action="store_true", help="print the fixture render as ASCII")
     group.add_argument("--bless", action="store_true", help="overwrite the golden PNG")
     args = parser.parse_args()
@@ -636,6 +727,10 @@ def main():
         sys.exit(cmd_sprite())
     if args.handler:
         sys.exit(cmd_handler())
+    if args.failures:
+        sys.exit(cmd_failures())
+    if args.shape:
+        sys.exit(cmd_shape())
     if args.ascii:
         sys.exit(cmd_ascii())
     if args.bless:

@@ -1,0 +1,1 @@
+{"status": {"data": {"stations": [{"station_id": "SOMEONE-ELSE", "num_bikes_available": 4, "num_ebikes_available": 1, "num_docks_available": 9, "is_renting": 1, "is_installed": 1}]}, "version": "2.3"}}
