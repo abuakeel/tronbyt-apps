@@ -342,16 +342,67 @@ def cmd_counts():
     return 1 if failures else 0
 
 
+# --- --sprite mode -------------------------------------------------------
+
+
+def frame_mask(path, region, scale):
+    """The lit/unlit mask over `region` of an image, as a list of strings."""
+    px = load_scaled(path, scale)
+    x0, y0, x1, y1 = region
+    return [
+        "".join("#" if lit(px[x, y]) else "." for x in range(x0, x1))
+        for y in range(y0, y1)
+    ]
+
+
+def reference_sprite_mask():
+    """The sprite as it appears in the ORIGINAL frame, shifted into place.
+
+    Source region x20-38, rows 11-29 (tools/cut_sprite.py's SPRITE_BOX), read
+    from reference/citibike-64x32.png and reported at its post-shift screen
+    coordinates x0-18.
+    """
+    scale = scale_from(str(REFERENCE_PNG))
+    px = load_scaled(str(REFERENCE_PNG), scale)
+    return [
+        "".join("#" if lit(px[x, y]) else "." for x in range(20, 39))
+        for y in range(11, 30)
+    ]
+
+
+def cmd_sprite():
+    fixture = load_json(REFERENCE_FIXTURE)
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "frame.webp"
+        result = render_via_mock(fixture["info"], fixture["status"], out_path)
+        if result.returncode != 0:
+            print(f"sprite: FAIL -- render crashed (exit {result.returncode})\n{result.stderr}")
+            return 1
+        got = frame_mask(str(out_path), SPRITE_REGION, scale_from(str(out_path)))
+    want = reference_sprite_mask()
+    if got == want:
+        print(f"sprite: OK -- {len(want)} rows match the reference cut exactly")
+        return 0
+    print("sprite: FAIL -- rendered sprite differs from the reference cut")
+    for i, (g, w) in enumerate(zip(got, want)):
+        flag = "  " if g == w else "<-"
+        print(f"  row {11 + i:2d} got |{g}| want |{w}| {flag}")
+    return 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--counts", action="store_true", help="probe counts() and station_name()")
+    group.add_argument("--sprite", action="store_true", help="pin the sprite against the reference cut")
     args = parser.parse_args()
 
     if args.counts:
         sys.exit(cmd_counts())
+    if args.sprite:
+        sys.exit(cmd_sprite())
     print("no default mode yet -- see Task 4")
     sys.exit(1)
 

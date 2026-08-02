@@ -1,6 +1,29 @@
 load("render.star", "render")
 load("http.star", "http")
 load("encoding/json.star", "json")
+load("encoding/base64.star", "base64")
+
+# --- embedded art ---------------------------------------------------------
+# Cut from reference/citibike-64x32.png by tools/cut_sprite.py -- NOT drawn by
+# hand. Regenerate with `python3 tools/cut_sprite.py --emit`; never edit these
+# strings directly. tools/gate_citibike.py --sprite re-derives the cut from
+# the reference and fails if what renders here has drifted from it.
+#
+# SPRITE_B64 is the bike at original x20-38, rows 11-29 (19x19). x20 is the
+# only column band that touches neither wheel, so shifting the sprite left to
+# x0 cuts through the frame tubes between the seat and the handlebars, and the
+# front wheel arrives whole.
+SPRITE_B64 = "iVBORw0KGgoAAAANSUhEUgAAABMAAAATCAIAAAD9MqGbAAABUUlEQVR4nJ2Sy26CQBSGf2itOzfGB4Bhxq0+BAr6rrVNU5Davolu1YBxiEak6DBdqJSi2Oi/O5dvzmWOgr+aTqcAqtVqvV7HHSK9EemN7iEBGL2P6wlqWUDK9F4y3V0nHy96jf4noNxck9iulClkavS/biCJ5cp0h1SMHVOKBEAYhpzzTbRZr9elz5Cuo1vvmjk4mJxzvfNKKT2YjLEgCDjnRUzvvGrmQDNfDmYQBIwxzXwupFFKfd/PN+kQ2zNyvx9F0WlsrwBvt9vjnMT2oDwAcuyYGdZut0+Zklhunmy1WnEcK8QeSvGtqE+ToZ3FVqtVrVb77cj2ADlxrXxZFTIFkMcA7Pf7vClFDCmLDevdN5zJ9/1speeilC4Wi7LocQ1XQqV3myQJY+zc32w2C7NcUBiGy+Uyfwnz+Ty7hH/OGsBsNhNCVCoVVVUbjUbm/wEnz5+RapOfUAAAAABJRU5ErkJggg=="
+
+# BOLT_B64 is the e-bike lightning bolt at original x50-53, rows 24-28 (4x5).
+BOLT_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAFCAIAAADtz9qMAAAARUlEQVR4nAXBMQqAMBBFwfcXUlpq54EU9bKC5wnYJIogiJ2bOCPg2McQzL+iFAeEmbp+EwC81+JeAe48PecMGFC8Nu0K/LfrFWgPimJNAAAAAElFTkSuQmCC"
+
+SPRITE = base64.decode(SPRITE_B64)
+BOLT = base64.decode(BOLT_B64)
+
+# Screen placement. The sprite occupies rows 11-29 exactly as in the original;
+# only its x moves.
+SPRITE_TOP = 11
 
 # --- data source ----------------------------------------------------------
 # Lyft GBFS, keyless. Version 2.3 for BOTH feeds, deliberately: v1.1 also
@@ -142,8 +165,17 @@ def main(config):
     if title == "":
         title = settings["label"]
     return render.Root(
-        child = render.Column(children = [
-            render.Text(title, font = "tb-8", color = "#ffffff"),
-            render.Text(classic + " " + ebikes + " " + docks, font = "tb-8", color = "#ffffff"),
+        child = render.Stack(children = [
+            render.Padding(pad = (0, SPRITE_TOP, 0, 0), child = render.Image(src = SPRITE)),
+            # Scaffolding, replaced by the real layout in the next task. Padded
+            # clear of the sprite's x0-18 footprint so the two do not overlap:
+            # unpadded, this text draws straight through the bike.
+            render.Padding(
+                pad = (20, 0, 0, 0),
+                child = render.Column(children = [
+                    render.Text(title, font = "tb-8", color = "#ffffff"),
+                    render.Text(classic + " " + ebikes + " " + docks, font = "tb-8", color = "#ffffff"),
+                ]),
+            ),
         ]),
     )
