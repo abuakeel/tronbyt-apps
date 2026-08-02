@@ -10,18 +10,15 @@ load("schema.star", "schema")
 # strings directly. tools/gate_citibike.py --sprite re-derives the cut from
 # the reference and fails if what renders here has drifted from it.
 #
-# SPRITE_B64 is the bike at original x12-38, rows 11-29 (27x19): seat, most of
-# the frame, and the whole front wheel, with the rear wheel running off the
-# left edge.
+# SPRITE_B64 is the WHOLE bike -- original x4-38, rows 11-29 (35x19), its exact
+# bounding box, shifted left 4 so it starts at x0. Nothing is cut.
 #
-# The cut DOES pass through the rear wheel (x4-17), deliberately. It lands at
-# the panel's left edge, where a sliced shape reads as continuing past the
-# frame; the same slice mid-frame, with black on both sides, reads as a
-# rendering bug. Cutting clear of both wheels is only possible in the x18-24
-# tube band, which leaves 15-21px of bike against a 27px dead gap -- tried at
-# x20 first, and rejected on review of the rendered frame as too aggressive a
-# crop.
-SPRITE_B64 = "iVBORw0KGgoAAAANSUhEUgAAABsAAAATCAIAAADu5eFvAAACEElEQVR4nK2Tz27aQBDGv11CqEK5gMw9NpgrXOAJoDaRmrbqc7aiUjCB9EGAAAckQFjYSBb/vTs9mCCnicCVOqfdmW9/OzszyxDNJpMJgEQikclkIh6JZFq9o9U7/5MIIFdvnxfw+Xy+Wq2iE4nkBWI2m/U8z3GcxWIxHo8vE+Uh0s25aNXJ3T3l7n5fyPF4M9HFAmmmRSRB8jyUA1CNh4FVIynO4QyL5AFSPDerJPYAlsul67qr9crzvFdStdZQa41gfVv98T7uU1M1Hm6rP4Ot67pqrZHP54Otruu2bbuue8xRih3Ajur3+qjWGlLuSBxGna8AbNuuVCpEot/vB4Jer6coSrlcns/nADi/umGxa351A2D09F0zmq8f22SxD7H4x1HnS+BJJpO9Xm/U+aaZj2Flv99PpVLHOoIIIO1NZzTzESwG0HOzGnjW63WpVHqJk2ZYYX2xWNxutxwgME4kgiefxk0zWyS2IDmwjNMZ3/e73W6wHlgGGNfM1ina7XaJiAFQa7/AGAASO8bjYDEAjHGSh2H7PpyF4zjpdDpcYsavBy0zLOAAhu3PJH2SPpEgEiQPgCQSf+GCHE8tBjBs34dx+XxeypfeRv/am83mfIgD0HVdiHPjHbb9fq/r+lt/oVDwfR8AZrPZYrGIiAtsuVw6jhOe8Nlsdppw9k+ssE2nUyFEPB7nnCuKcvL/AceUE/juiRW1AAAAAElFTkSuQmCC"
+# The third number row costs VERTICAL space, not horizontal: the rows are
+# right-aligned at x63 and even the widest 3-digit case only reaches x43, so
+# the full sprite fits at x0-34 with 8px to spare. Two cropped versions (x20,
+# then x12) were built and looked at on the device before that became obvious
+# -- both gave up bike for a gap that did not need to exist.
+SPRITE_B64 = "iVBORw0KGgoAAAANSUhEUgAAACMAAAATCAIAAACVwSOjAAACnElEQVR4nL2UzU7bQBSFz0wcQoJYIJRsq9ix2YKAwgOAYwe1iHVfoQ/Sp+i2G9SWtsQhaRdt1V1fIIBhkUJQovxIEdgEz9wurKYmhJC2Us9u5h7fb+bMjBn+Tefn5wASicT8/Pw/tppIWqGiFSr/gwQgVyiPN/D7Co1G4/LycnISkfxLUiaT6fV67Xa71WrVarWHSfJm8mWNUG6y9HNbH3Nbn8Z77t1TKCJ68AA02yGSIDkepkQHav49YzGwGECuY6nWvuuYmuWMw1gOyRvGcFyyQ2e32yWiqcSUFHJ2dnZ4T5q1n93Y3a8/JylAAclANfcgAwBuyc5uvh6NyRcJkqRwSzaA76/WVXNvdXV1bm5uJjWzvLzcbDY7nc7vPWXNtySDzy8fA1+/xePJ5LTvX68/+8Jj09nNN6eVHYy6V6q5J+U1wE4rOwCazeba2ho9enF0dBQaDg8P0+m0ruuNRiOTyTAAWqEMkiT7jCkAZzwGQIprxhWAuU4egGYV3VIhEloRLMYYPy5uhjNXV1epVAqAZh+EnwzkeV4ymVR6vd7Kykq1Wr0VS3gLiMCgFcpu0bxVtQ8AABTFLC0t/aqTZjlhnqEWFxd93+dBEAxhALhFEyAwTiTC6AbPRbNLJHyQdB1r4I82cR0LjGt2aVCtVqtEpAgh7p4BgJODJ6r5DowRyezGLgA1/wFACI4uOSRFhyR8xqeiM57n8SAIdF0fDSs/JRmQDIgEkSB5A0gicVLeHnIONTkpb0eXouu6lBIAxvzfJv/1eZ43vsQBCCEMw7jrMAzjvmzvqt/vj2yysLBwK9tOp1Or1QYJGIZxcXHRarUmxITqdrvtdnuoyeDlsqj17OwH5zEAiqKk0+k/wgxUr9eFEPF4nHMebfITsz9e09wAe3kAAAAASUVORK5CYII="
 
 # BOLT_B64 is the e-bike lightning bolt at original x50-53, rows 24-28 (4x5).
 BOLT_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAFCAIAAADtz9qMAAAARUlEQVR4nAXBMQqAMBBFwfcXUlpq54EU9bKC5wnYJIogiJ2bOCPg2McQzL+iFAeEmbp+EwC81+JeAe48PecMGFC8Nu0K/LfrFWgPimJNAAAAAElFTkSuQmCC"
@@ -59,11 +56,14 @@ COLOR_DOCK = "#3fd2ff"
 # A 4x5 open dock -- a receptacle a bike slides into, drawn open at the top so
 # it cannot be misread as a digit at this size (the reference's own '0' is an
 # oval with single top and bottom pixels).
+#
+# The base is TWO rows thick, not one. At one row it read as a plain letter U
+# on the device; the heavier base reads as a dock a bike stands in.
 DOCK_GLYPH = [
     "#..#",
     "#..#",
     "#..#",
-    "#..#",
+    "####",
     "####",
 ]
 

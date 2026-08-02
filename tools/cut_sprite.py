@@ -13,19 +13,15 @@ cut and prove the embedded copy has not drifted.
 
 Regions, measured off reference/citibike-64x32.png:
 
-  bike sprite  x12-38, rows 11-29  -- the cut passes through the rear wheel
-                                      (which spans x4-17), and that is
-                                      deliberate: it lands at the PANEL'S
-                                      LEFT EDGE, where a sliced shape reads
-                                      as continuing past the frame. The same
-                                      slice mid-frame, with black either
-                                      side, would read as a rendering bug.
-                                      Cutting clear of both wheels is only
-                                      possible at x18-24, which leaves just
-                                      15-21px of bike and a 27px dead gap --
-                                      too aggressive a crop, rejected on
-                                      review of the rendered frame.
+  bike sprite  x4-38, rows 11-29   -- the WHOLE bike, its exact bounding box.
+                                      Nothing is cut.
   bolt icon    x50-53, rows 24-28
+
+No crop was needed in the end. Three rows of numbers cost vertical space, not
+horizontal: right-aligned at x63, even the widest 3-digit row only reaches
+x43, so the full 35px sprite sits at x0-34 with 8px to spare. Two narrower
+crops (x20, then x12) were built and reviewed on the device first; both threw
+away bike for gap that did not need to exist.
 
 Usage:
     python3 tools/cut_sprite.py --emit    # print the two Starlark constants
@@ -41,7 +37,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_PNG = ROOT / "reference" / "citibike-64x32.png"
 
-SPRITE_BOX = (12, 11, 39, 30)  # x0, y0, x1, y1 (exclusive) -> 27x19
+SPRITE_BOX = (4, 11, 39, 30)  # x0, y0, x1, y1 (exclusive) -> 35x19, the whole bike
 BOLT_BOX = (50, 24, 54, 29)    # -> 4x5
 
 

@@ -141,13 +141,13 @@ to it, and `--sprite` enforces that.
 - Three numbers instead of two: **classic** bikes, **e-bikes**, **open docks**.
   GBFS's `num_bikes_available` includes e-bikes, so classic is derived by
   subtraction and clamped at 0.
-- The bike sprite is shifted 12px left, so the rear wheel runs off the panel's
-  left edge and the seat, frame, handlebars and front wheel all stay. The cut
-  lands at the frame boundary on purpose: a shape cut there reads as continuing
-  past the panel, where the same cut mid-frame would read as a rendering bug.
-  Cutting clear of both wheels is only possible in the x18-24 tube band, which
-  leaves 15-21px of bike against a 27px dead gap -- tried, and rejected on
-  review of the rendered frame.
+- The bike sprite is shifted 4px left so the WHOLE bike starts at x0. Nothing
+  is cut. The third row costs vertical space, not horizontal: rows are
+  right-aligned at x63 and even the widest 3-digit case only reaches x43, so
+  the full 35px sprite fits with 8px to spare. Two cropped versions (cut at x20,
+  then x12) were built and looked at on the device before that became obvious.
+- The dock icon's base is two rows thick. At one row it read as a plain letter
+  U on the panel.
 
 **Art is cut, not drawn.** `tools/cut_sprite.py --emit` regenerates the two
 base64 constants from the reference frame. Never hand-edit them, and never

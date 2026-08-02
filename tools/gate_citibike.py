@@ -48,10 +48,10 @@ EXPECTED_BASE_COUNT = 1
 
 W, H = 64, 32
 
-# The sprite's screen footprint: original x12-38, rows 11-29, shifted to x0-26.
-# (x0, y0, x1, y1), x1/y1 exclusive.
-SPRITE_REGION = (0, 11, 27, 30)
-SPRITE_SOURCE_X = 12  # must track tools/cut_sprite.py's SPRITE_BOX left edge
+# The sprite's screen footprint: the whole bike, original x4-38, rows 11-29,
+# shifted left 4 to x0-34. (x0, y0, x1, y1), x1/y1 exclusive.
+SPRITE_REGION = (0, 11, 35, 30)
+SPRITE_SOURCE_X = 4  # must track tools/cut_sprite.py's SPRITE_BOX left edge
 
 
 def load_json(path):
@@ -359,9 +359,9 @@ def frame_mask(path, region, scale):
 def reference_sprite_mask():
     """The sprite as it appears in the ORIGINAL frame, shifted into place.
 
-    Source region x12-38, rows 11-29 (tools/cut_sprite.py's SPRITE_BOX), read
+    Source region x4-38, rows 11-29 (tools/cut_sprite.py's SPRITE_BOX), read
     from reference/citibike-64x32.png and reported at its post-shift screen
-    coordinates x0-26.
+    coordinates x0-34.
     """
     scale = scale_from(str(REFERENCE_PNG))
     px = load_scaled(str(REFERENCE_PNG), scale)
