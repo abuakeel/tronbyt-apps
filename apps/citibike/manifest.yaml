@@ -1,0 +1,16 @@
+---
+id: citibike
+name: CitiBike
+summary: Bike, e-bike and dock availability
+# `desc` is USER-FACING -- it renders on the app's config page in tronbyt
+# (manager/configapp.html reads .AppMetadata.Desc, populated by
+# getAppMetadata's manifest.yaml fallback at helpers.go:514 for apps that are
+# not system apps). Keep it short. Engineering notes belong in README.md.
+desc: >-
+  Recreation of Tidbyt's closed-source first-party CitiBike app, with a field
+  the original does not have: open docks, alongside classic and electric bikes.
+  Pick a station with the typeahead below (search by street name) -- install
+  the app more than once, one per station, to show several in rotation.
+author: recreation of a Tidbyt original
+fileName: citibike.star
+packageName: citibike

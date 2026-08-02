@@ -94,6 +94,71 @@ python3 tools/gate.py --bullets        # assert bullet_form() route-id -> (form,
                                         # running is not a guard
 ```
 
+## CitiBike: `tools/gate_citibike.py`
+
+A sibling of `tools/gate.py` (which is **subway-only** — its constants, mock
+routes and bullet regions are all `nyc-subway`-specific). Same governing
+principle: no fixture branch inside the app; the harness substitutes a local
+mock GBFS server's URL into a tempfile copy and renders that. The two share
+only `tools/compare.py`'s pixel primitives.
+
+```bash
+python3 tools/gate_citibike.py             # whole 64x32 frame must match
+                                            # tools/fixtures/citibike/golden-64x32.png
+                                            # with 0 differing pixels
+python3 tools/gate_citibike.py --sprite    # the rendered bike must equal the cut
+                                            # taken from reference/citibike-64x32.png,
+                                            # so the embedded base64 art cannot drift
+python3 tools/gate_citibike.py --counts    # probe counts()/station_name() against
+                                            # synthetic records: the classic-bike
+                                            # subtraction and its clamp, not-renting,
+                                            # malformed, absent, feed down
+python3 tools/gate_citibike.py --handler   # probe search_stations(): labelling,
+                                            # duplicate-name disambiguation, the
+                                            # 20-result cap, the real 2463-station
+                                            # feed -- PLUS `pixlet schema`, the same
+                                            # call the server makes to build the config
+                                            # page (nothing else reaches get_schema(),
+                                            # so a typo'd field id would otherwise
+                                            # surface only as a broken config page)
+python3 tools/gate_citibike.py --failures  # every fixtures/citibike/failures/*.json
+                                            # case must render and keep the sprite intact
+python3 tools/gate_citibike.py --shape     # diff live GBFS key sets vs the fixture
+python3 tools/gate_citibike.py --ascii     # print the fixture render (development aid)
+python3 tools/gate_citibike.py --bless     # overwrite the golden PNG -- deliberate,
+                                            # never a side effect of running the gate
+```
+
+**The golden PNG is not the reference.** `reference/citibike-64x32.png` is the
+recovered ORIGINAL Tidbyt frame and can never match this app: the original has
+two numbers, this has three. `tools/fixtures/citibike/golden-64x32.png` is the
+new layout's own pinned render. The original's authority survives where it
+still applies — the sprite, the bolt, the colours and the fonts all trace back
+to it, and `--sprite` enforces that.
+
+**Deliberate divergences from the original:**
+
+- Three numbers instead of two: **classic** bikes, **e-bikes**, **open docks**.
+  GBFS's `num_bikes_available` includes e-bikes, so classic is derived by
+  subtraction and clamped at 0.
+- The bike sprite is shifted 12px left, so the rear wheel runs off the panel's
+  left edge and the seat, frame, handlebars and front wheel all stay. The cut
+  lands at the frame boundary on purpose: a shape cut there reads as continuing
+  past the panel, where the same cut mid-frame would read as a rendering bug.
+  Cutting clear of both wheels is only possible in the x18-24 tube band, which
+  leaves 15-21px of bike against a 27px dead gap -- tried, and rejected on
+  review of the rendered frame.
+
+**Art is cut, not drawn.** `tools/cut_sprite.py --emit` regenerates the two
+base64 constants from the reference frame. Never hand-edit them, and never
+hand-edit `reference/citibike-64x32.png` -- regenerate it with
+`tools/regenerate_citibike_reference.py` (`--check` verifies the committed PNG
+round-trips, and six landmark pixels guard the LED grid fit itself).
+
+The **dock icon is the exception**: it is new art with no original to cut from,
+so it is drawn from `render.Box` rows in `DOCK_GLYPH`, where it stays
+reviewable in a diff instead of hidden inside a base64 blob.
+
 ## Pixlet version matters
 
 Use **v0.53.1 of the tronbyt fork** -- `tronbyt/server` pins
@@ -109,6 +174,11 @@ an engineering notebook.
 renders both rows as `NO TRAINS` with a dim bullet. A non-JSON body (a proxy's HTML
 error page returned with a 200) is also survivable — `fetch_json` uses
 `json.decode(resp.body(), None)` rather than `resp.json()`, which is fatal.
+
+**CitiBike degrades the same way**, and for the same reason: an unreachable or
+malformed GBFS feed, a station missing from it, or a station that is not renting all
+render the full layout — sprite, icons, station name — with `--` in place of each of
+the three numbers. All of it is pinned by `tools/gate_citibike.py --failures`.
 
 **A WAN or DNS outage is NOT recoverable from app code.** Starlark has no
 `try`/`except`, and a transport-level failure inside `http.get()` — DNS resolution,
