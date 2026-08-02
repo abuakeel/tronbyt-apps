@@ -25,6 +25,88 @@ BOLT = base64.decode(BOLT_B64)
 # only its x moves.
 SPRITE_TOP = 11
 
+# --- layout ---------------------------------------------------------------
+# Row positions are the ORIGINAL frame's, where the original had a row: the
+# station name occupies rows 3-8 and the sprite rows 11-29. The three number
+# rows are new -- the original had two, at rows 14-19 and 24-29 -- and are
+# spaced evenly down the same band the original's two used.
+#
+# tb-8 renders its glyph one pixel below the top of its own box, so each
+# padding value below is (target row - 1).
+#
+# tb-8 is measured, not preferred: it reproduces the reference's station-name
+# text at 0/240 pixels, where Dina_r400-6 misses 87 and 5x8 misses 49. Its
+# digits match the reference's 2/1/0 glyphs exactly too.
+FONT = "tb-8"
+TITLE_TOP = 2           # glyph lands on row 3
+ROW_TOPS = [9, 17, 25]  # glyphs land on rows 10, 18, 26
+
+COLOR_TEXT = "#ffffff"
+
+# The dock icon is the one piece of art with no original to copy: the field
+# does not exist in the Tidbyt app. Cyan sits clearly apart from both the
+# sprite's #244bbd and the bolt's #f5ed4e.
+COLOR_DOCK = "#3fd2ff"
+
+# A 4x5 open dock -- a receptacle a bike slides into, drawn open at the top so
+# it cannot be misread as a digit at this size (the reference's own '0' is an
+# oval with single top and bottom pixels).
+DOCK_GLYPH = [
+    "#..#",
+    "#..#",
+    "#..#",
+    "#..#",
+    "####",
+]
+
+def dock_icon():
+    """The dock glyph as stacked 1px boxes.
+
+    Drawn rather than embedded because, unlike the sprite and the bolt, there
+    is no reference pixel data to cut it from -- this is new art, and a
+    literal bitmap keeps it reviewable in the diff instead of hidden inside a
+    base64 blob.
+    """
+    rows = []
+    for line in DOCK_GLYPH:
+        cells = []
+        for ch in line.elems():
+            color = COLOR_DOCK if ch == "#" else None
+            cells.append(render.Box(width = 1, height = 1, color = color))
+        rows.append(render.Row(children = cells))
+    return render.Column(children = rows)
+
+def stat_row(top, icon, value):
+    """One number row: optional icon, then the value, flush to the right edge.
+
+    Right-aligned rather than left: it is where the original puts its numbers,
+    and it keeps a 3-digit value (real -- 113 bikes and 114 docks exist in the
+    live feed) growing leftwards into empty space instead of shoving the icon
+    off screen.
+    """
+    children = []
+    if icon != None:
+        children.append(icon)
+        children.append(render.Box(width = 2, height = 1))
+    children.append(render.Text(value, font = FONT, color = COLOR_TEXT))
+    return render.Padding(
+        pad = (0, top, 0, 0),
+        child = render.Box(
+            width = 64,
+            height = 7,
+            # expanded = True is LOAD-BEARING, not decoration: without it the
+            # Row shrinks to its children and main_align = "end" has nothing
+            # to align against, so the row renders CENTRED instead of flush
+            # right. Verified by rendering both ways.
+            child = render.Row(
+                main_align = "end",
+                cross_align = "center",
+                expanded = True,
+                children = children,
+            ),
+        ),
+    )
+
 # --- data source ----------------------------------------------------------
 # Lyft GBFS, keyless. Version 2.3 for BOTH feeds, deliberately: v1.1 also
 # serves this system and also carries num_ebikes_available, but the two
@@ -161,21 +243,29 @@ def get_settings(config):
 def main(config):
     settings = get_settings(config)
     classic, ebikes, docks = counts(settings["station_id"])
+    # The live feed's name is preferred over the config blob's stored label: a
+    # station can be renamed after it was picked, and the feed is the
+    # authority. The label is the fallback, and only if both are empty does the
+    # app fall back to its own name.
     title = station_name(settings["station_id"])
     if title == "":
         title = settings["label"]
+    if title == "":
+        title = "CitiBike"
+
     return render.Root(
+        delay = 100,
         child = render.Stack(children = [
             render.Padding(pad = (0, SPRITE_TOP, 0, 0), child = render.Image(src = SPRITE)),
-            # Scaffolding, replaced by the real layout in the next task. Padded
-            # clear of the sprite's x0-18 footprint so the two do not overlap:
-            # unpadded, this text draws straight through the bike.
             render.Padding(
-                pad = (20, 0, 0, 0),
-                child = render.Column(children = [
-                    render.Text(title, font = "tb-8", color = "#ffffff"),
-                    render.Text(classic + " " + ebikes + " " + docks, font = "tb-8", color = "#ffffff"),
-                ]),
+                pad = (0, TITLE_TOP, 0, 0),
+                child = render.Marquee(
+                    width = 64,
+                    child = render.Text(title, font = FONT, color = COLOR_TEXT),
+                ),
             ),
+            stat_row(ROW_TOPS[0], None, classic),
+            stat_row(ROW_TOPS[1], render.Image(src = BOLT), ebikes),
+            stat_row(ROW_TOPS[2], dock_icon(), docks),
         ]),
     )

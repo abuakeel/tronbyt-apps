@@ -390,6 +390,74 @@ def cmd_sprite():
     return 1
 
 
+# --- default / --ascii / --bless -----------------------------------------
+
+
+def render_fixture(out_path):
+    fixture = load_json(REFERENCE_FIXTURE)
+    return render_via_mock(fixture["info"], fixture["status"], out_path)
+
+
+def cmd_ascii():
+    """Print the fixture render as ASCII with row numbers. Development aid for
+    positioning -- prints, never gates."""
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "frame.webp"
+        result = render_fixture(out_path)
+        if result.returncode != 0:
+            print(f"render crashed (exit {result.returncode})\n{result.stderr}")
+            return 1
+        px = load_scaled(str(out_path), scale_from(str(out_path)))
+        print("    " + "".join(str(x % 10) for x in range(W)))
+        for y in range(H):
+            print("%2d  " % y + "".join("#" if lit(px[x, y]) else "." for x in range(W)))
+    return 0
+
+
+def cmd_bless():
+    """Overwrite the golden PNG from the current render.
+
+    Deliberately a separate, explicit mode: the golden is the layout's
+    definition, so replacing it must be a decision someone makes and reviews
+    in a diff, never a side effect of running the gate.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "frame.webp"
+        result = render_fixture(out_path)
+        if result.returncode != 0:
+            print(f"render crashed (exit {result.returncode})\n{result.stderr}")
+            return 1
+        from PIL import Image
+
+        FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
+        Image.open(out_path).convert("RGB").save(GOLDEN_PNG)
+    print(f"wrote {GOLDEN_PNG} -- REVIEW the ascii dump before committing it")
+    return 0
+
+
+def cmd_default():
+    if not GOLDEN_PNG.exists():
+        print(f"{GOLDEN_PNG} does not exist -- run --bless once the layout is right")
+        return 1
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "frame.webp"
+        result = render_fixture(out_path)
+        if result.returncode != 0:
+            print(f"default: FAIL -- render crashed (exit {result.returncode})\n{result.stderr}")
+            return 1
+        scale = scale_from(str(GOLDEN_PNG))
+        got = load_scaled(str(out_path), scale)
+        want = load_scaled(str(GOLDEN_PNG), scale)
+        diff = [
+            (x, y) for y in range(H) for x in range(W) if lit(got[x, y]) != lit(want[x, y])
+        ]
+    print(f"  whole frame  {'OK' if not diff else 'MISMATCH'}  {len(diff)}/{W * H} pixels differ")
+    if diff:
+        print(f"  first differing pixels: {diff[:12]}")
+        return 1
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -397,14 +465,19 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--counts", action="store_true", help="probe counts() and station_name()")
     group.add_argument("--sprite", action="store_true", help="pin the sprite against the reference cut")
+    group.add_argument("--ascii", action="store_true", help="print the fixture render as ASCII")
+    group.add_argument("--bless", action="store_true", help="overwrite the golden PNG")
     args = parser.parse_args()
 
     if args.counts:
         sys.exit(cmd_counts())
     if args.sprite:
         sys.exit(cmd_sprite())
-    print("no default mode yet -- see Task 4")
-    sys.exit(1)
+    if args.ascii:
+        sys.exit(cmd_ascii())
+    if args.bless:
+        sys.exit(cmd_bless())
+    sys.exit(cmd_default())
 
 
 if __name__ == "__main__":
