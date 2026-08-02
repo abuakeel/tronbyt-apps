@@ -29,6 +29,57 @@ BOLT = base64.decode(BOLT_B64)
 # Screen placement. The sprite occupies rows 11-29 exactly as in the original;
 # only its x moves.
 SPRITE_TOP = 11
+SPRITE_WIDTH = 35
+
+# --- the roll-in ----------------------------------------------------------
+# The bike rolls in from the left edge once, then parks for the rest of the
+# slot: 1.0s still, 1.5s of motion, then nothing moves again.
+#
+# FRAME_MS x TOTAL_FRAMES is the whole webp, not the animation. pixlet caps a
+# render at 150 frames, which at 100ms is the 15s an app gets on screen. The
+# frames after the roll are IDENTICAL copies of the parked sprite, and they
+# are load-bearing: render.Animation LOOPS its children, so a 25-frame
+# animation would roll the bike in again every 2.5s. Padding the list to the
+# full render length is what makes it happen exactly once.
+FRAME_MS = 100
+TOTAL_FRAMES = 150
+ROLL_HOLD_FRAMES = 10   # 1.0s parked off-screen before anything moves
+ROLL_CONST_FRAMES = 10  # 1.0s at constant speed
+ROLL_EASE_FRAMES = 5    # 0.5s decelerating to a stop
+
+def roll_x(frame):
+    """Sprite x offset on `frame`: -SPRITE_WIDTH (fully off-screen) up to 0.
+
+    Speed is solved, not tuned by eye: a constant phase of v px/frame followed
+    by a linear decel from v to 0 covers v*const + v*ease/2 pixels, so
+    v = SPRITE_WIDTH / (const + ease/2) makes the bike arrive exactly at x=0
+    on the last frame of the roll -- no overshoot to clamp away, and no
+    fractional remainder parked one pixel short.
+    """
+    if frame < ROLL_HOLD_FRAMES:
+        return -SPRITE_WIDTH
+
+    step = frame - ROLL_HOLD_FRAMES + 1
+    if step >= ROLL_CONST_FRAMES + ROLL_EASE_FRAMES:
+        return 0
+
+    v = SPRITE_WIDTH / (ROLL_CONST_FRAMES + ROLL_EASE_FRAMES / 2.0)
+    if step <= ROLL_CONST_FRAMES:
+        travelled = v * step
+    else:
+        t = step - ROLL_CONST_FRAMES
+        travelled = v * ROLL_CONST_FRAMES + v * (t - t * t / (2.0 * ROLL_EASE_FRAMES))
+    return int(travelled) - SPRITE_WIDTH
+
+def rolling_sprite():
+    """The sprite layer: one frame per rendered frame, rolling then parked."""
+    frames = []
+    for i in range(TOTAL_FRAMES):
+        frames.append(render.Padding(
+            pad = (roll_x(i), SPRITE_TOP, 0, 0),
+            child = render.Image(src = SPRITE),
+        ))
+    return render.Animation(children = frames)
 
 # --- layout ---------------------------------------------------------------
 # Row positions are the ORIGINAL frame's, where the original had a row: the
@@ -315,9 +366,9 @@ def main(config):
         title = "CitiBike"
 
     return render.Root(
-        delay = 100,
+        delay = FRAME_MS,
         child = render.Stack(children = [
-            render.Padding(pad = (0, SPRITE_TOP, 0, 0), child = render.Image(src = SPRITE)),
+            rolling_sprite(),
             render.Padding(
                 pad = (0, TITLE_TOP, 0, 0),
                 child = render.Marquee(

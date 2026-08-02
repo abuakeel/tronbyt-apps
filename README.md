@@ -113,6 +113,11 @@ python3 tools/gate_citibike.py --counts    # probe counts()/station_name() again
                                             # synthetic records: the classic-bike
                                             # subtraction and its clamp, not-renting,
                                             # malformed, absent, feed down
+python3 tools/gate_citibike.py --motion    # pin the roll-in: 1.0s still, 1.5s of
+                                            # motion decelerating over the last 0.5s,
+                                            # then PARKED for the rest of the render
+                                            # (a looping animation would show up here
+                                            # as movement after the settle slot)
 python3 tools/gate_citibike.py --handler   # probe search_stations(): labelling,
                                             # duplicate-name disambiguation, the
                                             # 20-result cap, the real 2463-station
@@ -148,6 +153,20 @@ to it, and `--sprite` enforces that.
   then x12) were built and looked at on the device before that became obvious.
 - The dock icon's base is two rows thick. At one row it read as a plain letter
   U on the panel.
+- **The bike rolls in once.** 1.0s still with the bike off-screen, then 1.5s of
+  motion -- 1.0s at a constant ~2.8px/frame, then decelerating to a stop over
+  the last 0.5s -- and parked for the rest of the slot.
+
+> **Why the animation is 150 frames when the motion is 1.5s.** `render.Animation`
+> LOOPS its children, so a 25-frame animation would roll the bike in again every
+> 2.5s. The frames after the roll are identical copies of the parked sprite, and
+> padding the list to the full render length is what makes the entrance happen
+> exactly once. `--motion` fails if anything moves after the settle slot.
+
+> **Every pixel gate reads the SETTLED frame, not frame 0.** Frame 0 is now the
+> bike still off-screen. `--bless` writes the settled frame too, so the golden's
+> station name is captured mid-scroll -- deterministic, and the same caveat the
+> recovered reference frame carries.
 
 **Art is cut, not drawn.** `tools/cut_sprite.py --emit` regenerates the two
 base64 constants from the reference frame. Never hand-edit them, and never

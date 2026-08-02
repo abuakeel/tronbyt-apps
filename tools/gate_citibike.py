@@ -15,6 +15,8 @@ Modes:
                  clamped, not-renting, malformed, absent
   --sprite      the rendered sprite region must equal the cut taken from
                  reference/citibike-64x32.png
+  --motion      pin the roll-in: 1.0s still, 1.5s of motion decelerating over
+                 the last 0.5s, then parked for the rest of the render
   --handler     probe search_stations() labelling and the result cap
   --failures    every tools/fixtures/citibike/failures/*.json case must
                  render without a Starlark error and keep the sprite intact
@@ -24,6 +26,7 @@ Modes:
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,6 +34,8 @@ import threading
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from compare import lit, load_scaled, scale_from  # noqa: E402
@@ -52,6 +57,45 @@ W, H = 64, 32
 # shifted left 4 to x0-34. (x0, y0, x1, y1), x1/y1 exclusive.
 SPRITE_REGION = (0, 11, 35, 30)
 SPRITE_SOURCE_X = 4  # must track tools/cut_sprite.py's SPRITE_BOX left edge
+
+
+# The bike rolls in over the first 2.5s, so frame 0 is NOT the finished
+# layout -- it is the bike still off-screen. Every pixel gate here reads the
+# SETTLED frame (the last one) instead. compare.py's loaders always read frame
+# 0, which is correct for the single-frame reference PNGs and wrong for this
+# app's webp, hence the frame-aware loader below.
+def frame_count(path):
+    return getattr(Image.open(path), "n_frames", 1)
+
+
+def settled_index(path):
+    return frame_count(path) - 1
+
+
+def load_frame(path, index, scale=None):
+    """One frame of a webp/PNG, brightness-normalised like compare.load_scaled."""
+    im = Image.open(path)
+    try:
+        im.seek(index)
+    except EOFError:
+        sys.exit(f"{path}: no frame {index} (has {frame_count(path)})")
+    im = im.convert("RGB")
+    if im.size != (W, H):
+        sys.exit(f"{path}: expected {W}x{H}, got {im.size}")
+    src = im.load()
+    if scale is None:
+        peak = max(max(src[x, y]) for x in range(W) for y in range(H)) or 1
+        scale = 255.0 / peak
+    out = Image.new("RGB", (W, H))
+    op = out.load()
+    for y in range(H):
+        for x in range(W):
+            op[x, y] = tuple(min(255, int(v * scale)) for v in src[x, y])
+    return out.load()
+
+
+def load_settled(path, scale=None):
+    return load_frame(path, settled_index(path), scale)
 
 
 def load_json(path):
@@ -347,8 +391,8 @@ def cmd_counts():
 
 
 def frame_mask(path, region, scale):
-    """The lit/unlit mask over `region` of an image, as a list of strings."""
-    px = load_scaled(path, scale)
+    """The lit/unlit mask over `region` of a render's SETTLED frame."""
+    px = load_settled(path, scale)
     x0, y0, x1, y1 = region
     return [
         "".join("#" if lit(px[x, y]) else "." for x in range(x0, x1))
@@ -389,6 +433,145 @@ def cmd_sprite():
         flag = "  " if g == w else "<-"
         print(f"  row {11 + i:2d} got |{g}| want |{w}| {flag}")
     return 1
+
+
+# --- --motion mode -------------------------------------------------------
+# The roll-in as SPECIFIED, in seconds. These are the requirement, not a
+# reading of the code: 1.0s still, then 1.5s of motion of which the last 0.5s
+# decelerates. The app's frame counts are read out of the source and checked
+# against these, so changing a constant without meaning to fails here.
+SPEC_HOLD_S = 1.0
+SPEC_ROLL_S = 1.5
+SPEC_EASE_S = 0.5
+
+# The bike's own column band. Measuring the sprite's right edge anywhere wider
+# would pick up the number rows, which share rows 11-29 from x43 rightwards.
+MOTION_PROBE_X = 41
+
+
+def app_constant(name):
+    m = re.search(r"^%s = (\d+)\s*(?:#.*)?$" % name, APP_SRC.read_text(), re.M)
+    if not m:
+        sys.exit(f"could not find {name} in {APP_SRC}")
+    return int(m.group(1))
+
+
+def sprite_right_edge(px):
+    """Rightmost lit sprite column, or None when the bike is fully off-screen."""
+    xs = [x for x in range(MOTION_PROBE_X) for y in range(11, 30) if lit(px[x, y])]
+    return max(xs) if xs else None
+
+
+def cmd_motion():
+    frame_ms = app_constant("FRAME_MS")
+    hold = app_constant("ROLL_HOLD_FRAMES")
+    const = app_constant("ROLL_CONST_FRAMES")
+    ease = app_constant("ROLL_EASE_FRAMES")
+    failures = []
+
+    # 1. The frame counts must still express the specified timing.
+    for label, got_s, want_s in (
+        ("hold", hold * frame_ms / 1000.0, SPEC_HOLD_S),
+        ("roll", (const + ease) * frame_ms / 1000.0, SPEC_ROLL_S),
+        ("ease", ease * frame_ms / 1000.0, SPEC_EASE_S),
+    ):
+        if abs(got_s - want_s) > 1e-9:
+            failures.append(f"  timing: {label} is {got_s}s, spec says {want_s}s")
+
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "frame.webp"
+        result = render_fixture(out_path)
+        if result.returncode != 0:
+            print(f"motion: FAIL -- render crashed (exit {result.returncode})\n{result.stderr}")
+            return 1
+
+        total = frame_count(str(out_path))
+        # Indexed by TIME SLOT, not by frame number. The webp encoder coalesces
+        # identical consecutive frames -- the parked tail currently collapses
+        # one pair into a single 200ms frame -- so frame N is not necessarily
+        # the Nth 100ms of playback. Expanding each frame across the slots it
+        # occupies makes every check below independent of that.
+        edges = []
+        durations = []
+        im = Image.open(str(out_path))
+        for i in range(total):
+            im.seek(i)
+            # PIL fills info["duration"] when the frame is DECODED, not when it
+            # is seeked to -- without this load() every frame reports None.
+            im.load()
+            duration = im.info.get("duration")
+            durations.append(duration)
+            edge = sprite_right_edge(load_frame(str(out_path), i))
+            slots = 1 if not duration else duration // frame_ms
+            edges.extend([edge] * slots)
+
+    # 2. Playback rate. Every frame must last a whole number of FRAME_MS slots
+    #    (otherwise the timeline above is a lie), and the whole render must come
+    #    to TOTAL_FRAMES x FRAME_MS.
+    ragged = [d for d in durations if not d or d % frame_ms]
+    if ragged:
+        failures.append(f"  frame duration: not whole multiples of {frame_ms}ms: {sorted(set(ragged))}")
+    want_total = app_constant("TOTAL_FRAMES") * frame_ms
+    got_total = sum(d or 0 for d in durations)
+    if got_total != want_total:
+        failures.append(f"  total duration: {got_total}ms, expected {want_total}ms")
+
+    total = len(edges)
+
+    # 3. Nothing visible during the hold.
+    visible_hold = [i for i in range(min(hold, total)) if edges[i] is not None]
+    if visible_hold:
+        failures.append(f"  hold: bike visible during the still phase, in slots {visible_hold[:5]}")
+
+    # 4. It arrives, parks at the sprite's full width, and NEVER MOVES AGAIN.
+    #    This is what makes it roll in ONCE: a looping animation shorter than
+    #    the render would replay the roll every few seconds, and would show up
+    #    here as motion after the settle frame.
+    settle = hold + const + ease - 1
+    parked = SPRITE_REGION[2] - 1
+    if settle >= total:
+        failures.append(f"  roll: settles at slot {settle} but the render is only {total} slots")
+    else:
+        after = edges[settle:]
+        if any(e != parked for e in after):
+            moved = [(settle + i, e) for i, e in enumerate(after) if e != parked]
+            failures.append(
+                f"  settle: bike must be parked at x={parked} from slot {settle} to the end; "
+                f"moved at {moved[:5]}"
+            )
+
+    # 5. The roll itself: always forward, constant then decelerating.
+    roll = [e for e in edges[hold:settle + 1] if e is not None]
+    deltas = [b - a for a, b in zip(roll, roll[1:])]
+    if any(d < 0 for d in deltas):
+        failures.append(f"  roll: bike moves backwards somewhere: {deltas}")
+
+    const_deltas = deltas[:const - 1]
+    ease_deltas = deltas[const - 1:]
+    # Constant phase: integer pixels cannot hold an exact 2.8px/frame, so the
+    # real requirement is that no step differs from another by more than 1px.
+    if const_deltas and max(const_deltas) - min(const_deltas) > 1:
+        failures.append(f"  constant phase: steps vary by more than 1px: {const_deltas}")
+    # Ease phase: must actually slow down, and end slower than it started.
+    if ease_deltas:
+        if any(b > a for a, b in zip(ease_deltas, ease_deltas[1:])):
+            failures.append(f"  ease phase: speeds up again instead of decelerating: {ease_deltas}")
+        if const_deltas and ease_deltas[-1] >= min(const_deltas):
+            failures.append(
+                f"  ease phase: final step {ease_deltas[-1]}px is not slower than the "
+                f"constant phase {const_deltas}"
+            )
+
+    for line in failures:
+        print(line)
+    if not failures:
+        print(
+            f"motion: OK -- {hold * frame_ms}ms still, {(const + ease) * frame_ms}ms roll "
+            f"({const_deltas} then {ease_deltas}), parked from slot {settle} to {total - 1}"
+        )
+    else:
+        print("motion: FAIL")
+    return 1 if failures else 0
 
 
 # --- --failures mode -----------------------------------------------------
@@ -656,7 +839,8 @@ def cmd_ascii():
         if result.returncode != 0:
             print(f"render crashed (exit {result.returncode})\n{result.stderr}")
             return 1
-        px = load_scaled(str(out_path), scale_from(str(out_path)))
+        px = load_settled(str(out_path))
+        print(f"    (settled frame {settled_index(str(out_path))} of {frame_count(str(out_path))})")
         print("    " + "".join(str(x % 10) for x in range(W)))
         for y in range(H):
             print("%2d  " % y + "".join("#" if lit(px[x, y]) else "." for x in range(W)))
@@ -676,10 +860,12 @@ def cmd_bless():
         if result.returncode != 0:
             print(f"render crashed (exit {result.returncode})\n{result.stderr}")
             return 1
-        from PIL import Image
-
         FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
-        Image.open(out_path).convert("RGB").save(GOLDEN_PNG)
+        # The SETTLED frame, not frame 0 -- frame 0 is the bike still
+        # off-screen mid-roll-in.
+        im = Image.open(out_path)
+        im.seek(settled_index(str(out_path)))
+        im.convert("RGB").save(GOLDEN_PNG)
     print(f"wrote {GOLDEN_PNG} -- REVIEW the ascii dump before committing it")
     return 0
 
@@ -695,7 +881,7 @@ def cmd_default():
             print(f"default: FAIL -- render crashed (exit {result.returncode})\n{result.stderr}")
             return 1
         scale = scale_from(str(GOLDEN_PNG))
-        got = load_scaled(str(out_path), scale)
+        got = load_settled(str(out_path), scale)
         want = load_scaled(str(GOLDEN_PNG), scale)
         diff = [
             (x, y) for y in range(H) for x in range(W) if lit(got[x, y]) != lit(want[x, y])
@@ -715,6 +901,7 @@ def main():
     group.add_argument("--counts", action="store_true", help="probe counts() and station_name()")
     group.add_argument("--sprite", action="store_true", help="pin the sprite against the reference cut")
     group.add_argument("--handler", action="store_true", help="probe search_stations()")
+    group.add_argument("--motion", action="store_true", help="pin the roll-in timing and easing")
     group.add_argument("--failures", action="store_true", help="run tools/fixtures/citibike/failures/*.json")
     group.add_argument("--shape", action="store_true", help="diff live GBFS key shape vs the fixture")
     group.add_argument("--ascii", action="store_true", help="print the fixture render as ASCII")
@@ -727,6 +914,8 @@ def main():
         sys.exit(cmd_sprite())
     if args.handler:
         sys.exit(cmd_handler())
+    if args.motion:
+        sys.exit(cmd_motion())
     if args.failures:
         sys.exit(cmd_failures())
     if args.shape:
